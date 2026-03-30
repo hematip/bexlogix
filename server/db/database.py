@@ -16,3 +16,7 @@ SessionLocal = sessionmaker(
     autoflush=False,
     bind=engine,
 )
+
+# Create a new database session
+def get_db_session():
+    return SessionLocal()

@@ -33,3 +33,7 @@ htmlcov/
 # Keep sample data if needed, but ignore customer/local raw files
 data/raw/
 data/tmp/
+
+# My personal docs
+ERD.md
+BexLogix.docx

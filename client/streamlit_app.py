@@ -19,10 +19,12 @@ from client.styles.neumorphism import (
     role_badge_html,
 )
 from server.app.enums.roles import UserRole
+from server.db.startup_seed import seed_if_empty
 
 
 def main() -> None:
     st.set_page_config(page_title="BexLogix", layout="wide", page_icon="📦")
+    seed_if_empty()
     inject_global_css()
 
     current_user = auth_state.get_current_user()

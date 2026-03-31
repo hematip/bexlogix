@@ -31,7 +31,6 @@ def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
 # Validate that all required columns exist in the upload file
 def validate_store_columns(df: pd.DataFrame) -> None:
     missing_columns = set(REQUIRED_STORE_COLUMNS) - set(df.columns)
-
     if missing_columns:
         missing_str = ', '.join(sorted(missing_columns))
         raise ValueError(f'Missing required columns: {missing_str}')
@@ -42,7 +41,6 @@ def normalize_bool_value(value) -> bool:
         return False
     if isinstance(value, bool):
         return value
-
     value = str(value).strip().lower()
     return value in ['true', '1', 't', 'y', 'yes']
 
@@ -58,7 +56,6 @@ def transform_store_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     bool_columns = ["has_confectionery", "has_oil", "has_pasta"]
     for col in bool_columns:
         df[col] = df[col].apply(normalize_bool_value)
-
     return df
 
 # Insert new stores or update existing ones base on store_code
@@ -100,9 +97,7 @@ def upsert_stores(df: pd.DataFrame, db: Session) -> int:
                 is_active=True,
             )
             db.add(new_store)
-
         processed_count += 1
-
     db.commit()
     return processed_count
 

@@ -14,15 +14,14 @@ def _extract_start_point(
         return float(start_lat), float(start_lon)
 
     if {"start_lat", "start_lon"}.issubset(stops_df.columns):
-        start_candidates = (
+        candidates = (
             stops_df[["start_lat", "start_lon"]]
             .dropna(subset=["start_lat", "start_lon"])
             .head(1)
         )
-        if not start_candidates.empty:
-            row = start_candidates.iloc[0]
+        if not candidates.empty:
+            row = candidates.iloc[0]
             return float(row["start_lat"]), float(row["start_lon"])
-
     return None
 
 
@@ -36,7 +35,7 @@ def render_route_map(
         return
 
     if not {"lat", "lon"}.issubset(stops_df.columns):
-        st.warning("Map cannot be rendered because route coordinates are missing.")
+        st.warning("Map cannot be rendered — coordinates are missing.")
         return
 
     safe_df = stops_df.copy()
@@ -54,6 +53,7 @@ def render_route_map(
 
     layers: list[pdk.Layer] = []
 
+    # Store markers
     layers.append(
         pdk.Layer(
             "ScatterplotLayer",
@@ -66,31 +66,36 @@ def render_route_map(
         )
     )
 
+    # Start point
     if start_point is not None:
         start_df = pd.DataFrame(
-            [{"lat": start_point[0], "lon": start_point[1], "label": "Visitor Start Point"}]
+            [{"lat": start_point[0], "lon": start_point[1], "label": "Start Point"}]
         )
         layers.append(
             pdk.Layer(
                 "ScatterplotLayer",
                 data=start_df,
                 get_position="[lon, lat]",
-                get_fill_color=[45, 125, 220],
+                get_fill_color=[91, 127, 255],
                 get_radius=110,
                 radius_min_pixels=7,
                 pickable=True,
             )
         )
 
-    ordered_stops = (
+    # Route path
+    ordered = (
         store_points.dropna(subset=["route_order"])
-        .sort_values(["route_order", "store_code"] if "store_code" in store_points.columns else ["route_order"])
+        .sort_values(
+            ["route_order", "store_code"] if "store_code" in store_points.columns
+            else ["route_order"]
+        )
     )
 
     path_points: list[list[float]] = []
     if start_point is not None:
         path_points.append([start_point[1], start_point[0]])
-    for _, row in ordered_stops.iterrows():
+    for _, row in ordered.iterrows():
         path_points.append([float(row["lon"]), float(row["lat"])])
 
     if len(path_points) >= 2:
@@ -99,33 +104,41 @@ def render_route_map(
                 "PathLayer",
                 data=[{"path": path_points}],
                 get_path="path",
-                get_color=[35, 160, 90],
+                get_color=[91, 127, 255, 160],
                 width_scale=8,
                 width_min_pixels=3,
                 pickable=False,
             )
         )
 
-    all_latitudes = store_points["lat"].tolist()
-    all_longitudes = store_points["lon"].tolist()
+    # View state
+    all_lats = store_points["lat"].tolist()
+    all_lons = store_points["lon"].tolist()
     if start_point is not None:
-        all_latitudes.append(start_point[0])
-        all_longitudes.append(start_point[1])
+        all_lats.append(start_point[0])
+        all_lons.append(start_point[1])
 
     view_state = pdk.ViewState(
-        latitude=sum(all_latitudes) / len(all_latitudes),
-        longitude=sum(all_longitudes) / len(all_longitudes),
+        latitude=sum(all_lats) / len(all_lats),
+        longitude=sum(all_lons) / len(all_lons),
         zoom=11,
         pitch=0,
     )
 
     tooltip = {
         "html": (
-            "<b>Store:</b> {store_code} - {store_name}<br/>"
+            "<b>Store:</b> {store_code} — {store_name}<br/>"
             "<b>Order:</b> {route_order}<br/>"
             "<b>Status:</b> {assignment_status}"
         ),
-        "style": {"backgroundColor": "#1f2937", "color": "white"},
+        "style": {
+            "backgroundColor": "#2C3E50",
+            "color": "#F2F4F7",
+            "borderRadius": "8px",
+            "padding": "8px 12px",
+            "fontSize": "13px",
+            "fontFamily": "Inter, Segoe UI, sans-serif",
+        },
     }
 
     st.pydeck_chart(
@@ -138,4 +151,12 @@ def render_route_map(
         use_container_width=True,
     )
 
-    st.caption("Blue point = visitor start, red points = assigned stores, green line = ordered route.")
+    # Legend
+    st.markdown(
+        """<div style="display:flex;gap:1.5rem;margin-top:0.5rem;font-size:0.82rem;color:#6C7A89;">
+            <span>🔵 Visitor start</span>
+            <span>🔴 Assigned stores</span>
+            <span>🔷 Route path</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )

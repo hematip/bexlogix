@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 160" width="600" height="160">
+  <rect width="600" height="160" fill="#F2F4F7" rx="16"/>
+  
+  <!-- BEX text -->
+  <text x="30" y="85" font-family="Inter, Segoe UI, sans-serif" font-size="56" font-weight="800" fill="#2C3E50" letter-spacing="2">BEX</text>
+  
+  <!-- Infinity symbol -->
+  <g transform="translate(195, 55)" fill="none" stroke="#2C3E50" stroke-width="7" stroke-linecap="round">
+    <path d="M0,15 C0,-5 20,-5 25,15 C30,35 50,35 50,15 C50,-5 30,-5 25,15 C20,35 0,35 0,15 Z"/>
+  </g>
+  
+  <!-- TUDIO text -->
+  <text x="250" y="85" font-family="Inter, Segoe UI, sans-serif" font-size="56" font-weight="800" fill="#2C3E50" letter-spacing="2">TUDIO</text>
+  
+  <!-- Red dot -->
+  <circle cx="530" cy="42" r="14" fill="#E74C3C"/>
+  
+  <!-- Powered by text -->
+  <text x="30" y="130" font-family="Inter, Segoe UI, sans-serif" font-size="18" fill="#9CA3AF" font-weight="400">Powered by</text>
+  <text x="165" y="130" font-family="Inter, Segoe UI, sans-serif" font-size="18" fill="#2C3E50" font-weight="700">Kanoon Iran Novin</text>
+</svg>

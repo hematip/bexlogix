@@ -32,7 +32,7 @@ class StoreScheduleState(Base):
     # Whether this store is currently waiting for telesales follow-up
     in_telesales_queue: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    update_at: Mapped [datetime] = mapped_column(
+    updated_at: Mapped [datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),

@@ -62,7 +62,7 @@ def submit_visit_result(
         raise ValueError("Visit result is already submitted for this assignment.")
 
     visit_note = str(note or "").strip() or None
-    visit_date = assignment.work_date if submitted_at is None else assignment.work_date
+    visit_date = assignment.work_date if submitted_at is None else submitted_at.date()
 
     try:
         new_visit = Visit(

@@ -55,7 +55,7 @@ def _get_or_create_state(db: Session, store_id: int, baseline_date: date) -> Sto
 
 def get_store_visit_interval_days(store: Store) -> int:
     grade = _normalize_grade(store.grade)
-    if grade not in CONFECTIONERY_OIL_INTERVALS or grade not in PASTA_INTERVALS:
+    if grade not in CONFECTIONERY_OIL_INTERVALS and grade not in PASTA_INTERVALS:
         raise ValueError(f"Unsupported store grade: {store.grade}")
 
     candidate_intervals: list[int] = []

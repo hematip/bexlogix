@@ -120,8 +120,6 @@ def submit_followup_result(
         followup.contact_status = normalized_contact_status
         followup.result = normalized_result
         followup.note = str(note or "").strip() or None
-        followup.created_by = telesales_user_id
-
         scheduling_service.apply_telesales_outcome_to_schedule(
             db=db,
             store_id=followup.store_id,

@@ -5,15 +5,15 @@ from tempfile import NamedTemporaryFile
 import pandas as pd
 import streamlit as st
 
+from client.components.jalali_date import jalali_date_input
 from client.components.route_map import render_route_map
-from client.styles.neumorphism import neu_card, neu_metric, neu_section_header
+from client.styles.neumorphism import neu_metric, neu_section_header
 from server.app.models.daily_assignment import DailyAssignment
+from server.app.models.daily_visitor_status import DailyVisitorStatus
 from server.app.models.visitor_profile import VisitorProfile
 from server.app.services import (
     assignment_service,
     import_service,
-    import_users_service,
-    import_visitors_service,
     reporting_export_service,
     routing_service,
     telesales_service,
@@ -25,32 +25,13 @@ from server.app.services.import_daily_visitor_status_service import (
 from server.db.database import get_db_session
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _import_uploaded_excel(uploaded_file, import_func, label: str) -> None:
-    """Run an Excel import through a temp file and display result."""
+def _save_uploaded_excel(uploaded_file) -> str | None:
     if uploaded_file is None:
-        st.warning(f"Please upload an Excel file for {label}.")
-        return
-    temp_path = None
-    try:
-        with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            tmp.write(uploaded_file.getbuffer())
-            temp_path = tmp.name
-        db = get_db_session()
-        try:
-            count = import_func(temp_path, db)
-        finally:
-            db.close()
-        st.success(f"{count} rows processed for {label}.")
-    except Exception as exc:
-        st.error(f"{label} import failed: {exc}")
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
+        return None
+
+    with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp.write(uploaded_file.getbuffer())
+        return tmp.name
 
 
 def _load_assignments(work_date: date) -> pd.DataFrame:
@@ -58,16 +39,21 @@ def _load_assignments(work_date: date) -> pd.DataFrame:
     try:
         query = """
         SELECT
-            a.id AS assignment_id, a.work_date,
-            v.visitor_code, s.store_code, s.store_name,
-            a.route_order, a.route_distance_km,
-            a.assignment_status, vi.result AS visit_result
+            a.id AS assignment_id,
+            a.work_date,
+            v.visitor_code,
+            s.store_code,
+            s.store_name,
+            a.route_order,
+            a.route_distance_km,
+            a.assignment_status,
+            vi.result AS visit_result
         FROM daily_assignments a
         JOIN visitor_profiles v ON v.id = a.visitor_id
         JOIN stores s ON s.id = a.store_id
         LEFT JOIN visits vi ON vi.assignment_id = a.id
         WHERE a.work_date = :wd
-        ORDER BY v.visitor_code, a.route_order, s.store_code
+        ORDER BY v.visitor_code, a.route_order IS NULL, a.route_order, s.store_code
         """
         return pd.read_sql_query(query, db.bind, params={"wd": work_date.isoformat()})
     finally:
@@ -79,9 +65,15 @@ def _load_visitor_route_map(work_date: date, visitor_id: int) -> pd.DataFrame:
     try:
         query = """
         SELECT
-            a.id AS assignment_id, a.work_date, v.visitor_code,
-            s.store_code, s.store_name, s.lat, s.lon,
-            a.route_order, a.assignment_status,
+            a.id AS assignment_id,
+            a.work_date,
+            v.visitor_code,
+            s.store_code,
+            s.store_name,
+            s.lat,
+            s.lon,
+            a.route_order,
+            a.assignment_status,
             COALESCE(dvs.start_lat, v.default_start_lat) AS start_lat,
             COALESCE(dvs.start_lon, v.default_start_lon) AS start_lon
         FROM daily_assignments a
@@ -93,7 +85,9 @@ def _load_visitor_route_map(work_date: date, visitor_id: int) -> pd.DataFrame:
         ORDER BY a.route_order IS NULL, a.route_order, s.store_code
         """
         return pd.read_sql_query(
-            query, db.bind, params={"wd": work_date.isoformat(), "vid": visitor_id}
+            query,
+            db.bind,
+            params={"wd": work_date.isoformat(), "vid": visitor_id},
         )
     finally:
         db.close()
@@ -110,183 +104,339 @@ def _get_visitor_options(work_date: date) -> dict[str, int]:
             .order_by(VisitorProfile.visitor_code)
             .all()
         )
-        return {code: vid for vid, code in rows}
+        return {code: visitor_id for visitor_id, code in rows}
     finally:
         db.close()
 
 
-# ---------------------------------------------------------------------------
-# Main render
-# ---------------------------------------------------------------------------
+def _get_operational_snapshot_and_kpis(work_date: date) -> tuple[dict, dict, list[dict]]:
+    db = get_db_session()
+    try:
+        snapshot = assignment_service.get_work_date_operational_snapshot(db, work_date)
+        kpis = reporting_export_service.get_daily_kpis(db, work_date)
+        pending_queue = telesales_service.list_pending_followups(db, as_of_date=work_date)
+        return snapshot, kpis, pending_queue
+    finally:
+        db.close()
+
+
+def _run_apply_files_and_build_route(
+    work_date: date,
+    current_user: dict,
+    stores_file,
+    daily_file,
+) -> dict:
+    if daily_file is None:
+        raise ValueError("برای ساخت مسیر، بارگذاری فایل وضعیت روزانه الزامی است.")
+
+    stores_path = _save_uploaded_excel(stores_file)
+    daily_path = _save_uploaded_excel(daily_file)
+
+    try:
+        db = get_db_session()
+        try:
+            stores_processed = 0
+            if stores_path:
+                stores_processed = import_service.import_stores_from_excel(stores_path, db)
+
+            daily_processed = import_daily_visitor_statuses_from_excel(daily_path, db)
+            status_count_for_selected_date = (
+                db.query(DailyVisitorStatus)
+                .filter(DailyVisitorStatus.work_date == work_date)
+                .count()
+            )
+            if status_count_for_selected_date <= 0:
+                raise ValueError(
+                    "فایل وضعیت روزانه برای تاریخ انتخاب‌شده ردیفی ندارد. "
+                    "تاریخ کاری را با work_date فایل یکسان کنید."
+                )
+
+            draft_summary = assignment_service.generate_draft_assignments(
+                db=db,
+                work_date=work_date,
+                manager_user_id=current_user["id"],
+                replace_existing_draft=True,
+            )
+
+            routed_count = routing_service.apply_routes_for_work_date(
+                db=db,
+                work_date=work_date,
+                planner=routing_service.OSRMRoutePlanner(
+                    fallback_planner=routing_service.NearestNeighborRoutePlanner(),
+                ),
+            )
+
+            quality = assignment_service.evaluate_route_quality_vs_round_robin(
+                db=db,
+                work_date=work_date,
+            )
+
+            return {
+                "stores_processed": stores_processed,
+                "daily_processed": daily_processed,
+                "draft_summary": draft_summary,
+                "routed_count": routed_count,
+                "quality": quality,
+            }
+        finally:
+            db.close()
+    finally:
+        for path in [stores_path, daily_path]:
+            if path and os.path.exists(path):
+                os.remove(path)
+
+
+def _render_pipeline_result(result: dict) -> None:
+    draft_summary = result["draft_summary"]
+    quality = result["quality"]
+
+    st.success(
+        "فایل‌ها اعمال شد و مسیرها ساخته شدند. "
+        f"فروشگاه پردازش‌شده: {result['stores_processed']} | "
+        f"وضعیت روزانه پردازش‌شده: {result['daily_processed']} | "
+        f"تخصیص ساخته‌شده: {draft_summary.get('created_assignments', 0)} | "
+        f"مرتب‌سازی مسیر: {result['routed_count']}"
+    )
+
+    q1, q2, q3, q4 = st.columns(4)
+    with q1:
+        neu_metric("مسافت مبنای قبلی (km)", quality["baseline_km"])
+    with q2:
+        neu_metric("مسافت فعلی (km)", quality["current_km"])
+    with q3:
+        neu_metric("درصد بهبود", f"{quality['improvement_pct']}%")
+    with q4:
+        gate_text = "قبول" if quality["passes_gate"] else "رد"
+        neu_metric("گیت کیفیت", gate_text)
+
+    if not quality["passes_gate"]:
+        st.warning(
+            "گیت کیفیت عبور نکرده است. "
+            "بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد."
+        )
 
 
 def render_manager_dashboard(current_user: dict) -> None:
-    st.markdown(
-        '<h2 style="margin-bottom:0.2rem;">Manager Dashboard</h2>',
-        unsafe_allow_html=True,
+    st.markdown('<div class="page-title">داشبورد مدیر</div>', unsafe_allow_html=True)
+
+    work_date = jalali_date_input(
+        label="📅 تاریخ کاری",
+        key_prefix="manager_work_date",
+        default_gregorian=date.today(),
     )
 
-    # ── Work date ─────────────────────────────────────────────
-    work_date = st.date_input("📅  Work Date", value=date.today())
+    snapshot, kpis, pending_queue = _get_operational_snapshot_and_kpis(work_date)
+    is_locked = bool(snapshot["is_locked"])
 
-    # ── Data imports ──────────────────────────────────────────
-    with st.expander("📂  Data Imports", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            stores_file = st.file_uploader("Stores Excel", type=["xlsx"], key="stores_import")
-            users_file = st.file_uploader("Users Excel", type=["xlsx"], key="users_import")
-        with col2:
-            visitors_file = st.file_uploader("Visitors Excel", type=["xlsx"], key="visitors_import")
-            daily_file = st.file_uploader("Daily Status Excel", type=["xlsx"], key="daily_import")
+    if is_locked:
+        st.warning(
+            "این تاریخ قبلاً منتشر/ثبت عملیاتی شده و فعلاً در حالت فقط‌مشاهده است. "
+            "برای بازتولید مسیر باید از بخش پاک‌سازی کامل همین تاریخ استفاده شود."
+        )
 
-        bc1, bc2, bc3, bc4 = st.columns(4)
-        with bc1:
-            if st.button("Import Stores"):
-                _import_uploaded_excel(stores_file, import_service.import_stores_from_excel, "stores")
-        with bc2:
-            if st.button("Import Users"):
-                _import_uploaded_excel(users_file, import_users_service.import_users_from_excel, "users")
-        with bc3:
-            if st.button("Import Visitors"):
-                _import_uploaded_excel(
-                    visitors_file,
-                    import_visitors_service.import_visitor_profiles_from_excel,
-                    "visitor profiles",
-                )
-        with bc4:
-            if st.button("Import Daily Status"):
-                _import_uploaded_excel(
-                    daily_file, import_daily_visitor_statuses_from_excel, "daily visitor status"
-                )
+    with st.expander("اعمال فایل‌ها و ساخت مسیر", expanded=not is_locked):
+        st.markdown(
+            """
+            <div class="panel-description">
+                با آپلود فایل فروشگاه‌ها، اطلاعات فروشگاه‌ها به‌روزرسانی می‌شود.<br/>
+                با آپلود فایل وضعیت روزانه ویزیتورها، ظرفیت و نقطه شروع هر ویزیتور ثبت می‌شود و مسیرها برای همان تاریخ دوباره طراحی می‌شوند.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            """
+            <div class="panel-description-columns">
+                ستون‌های الزامی فایل وضعیت روزانه:
+                <span class="ltr-inline">work_date, username, visitor_code, full_name, start_lat, start_lon, capacity, is_active_today</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    # ── Route operations ──────────────────────────────────────
-    neu_section_header("Route Operations")
-    rc1, rc2, rc3, rc4 = st.columns(4)
+        c1, c2 = st.columns(2)
+        with c1:
+            stores_file = st.file_uploader(
+                "فایل فروشگاه‌ها (اختیاری)",
+                type=["xlsx"],
+                key=f"stores_apply_{work_date.isoformat()}",
+                disabled=is_locked,
+            )
+        with c2:
+            daily_file = st.file_uploader(
+                "فایل وضعیت روزانه ویزیتورها (اجباری)",
+                type=["xlsx"],
+                key=f"daily_apply_{work_date.isoformat()}",
+                disabled=is_locked,
+            )
 
-    with rc1:
-        if st.button("⚙️  Generate Draft", use_container_width=True):
+        if st.button(
+            "اعمال فایل‌ها و ساخت مسیر",
+            key=f"build_pipeline_{work_date.isoformat()}",
+            use_container_width=True,
+            disabled=is_locked,
+        ):
+            with st.spinner("در حال اعمال فایل‌ها، تولید تخصیص و ساخت مسیر..."):
+                try:
+                    result = _run_apply_files_and_build_route(
+                        work_date=work_date,
+                        current_user=current_user,
+                        stores_file=stores_file,
+                        daily_file=daily_file,
+                    )
+                    st.session_state["manager_last_pipeline_result"] = result
+                except Exception as exc:
+                    st.error(f"خطا در ساخت مسیر: {exc}")
+                else:
+                    _render_pipeline_result(result)
+                    st.rerun()
+
+        last_result = st.session_state.get("manager_last_pipeline_result")
+        if isinstance(last_result, dict):
+            _render_pipeline_result(last_result)
+
+    with st.expander("پاک‌سازی کامل داده‌های همین تاریخ", expanded=False):
+        st.markdown(
+            """
+            <div class="panel-description">
+                این عملیات همه داده‌های تخصیص، ویزیت و پیگیری فروش تلفنی مربوط به همین تاریخ را حذف می‌کند
+                و وضعیت برنامه‌ریزی فروشگاه‌ها را از تاریخچه باقی‌مانده بازسازی می‌کند.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        confirm_flush = st.checkbox(
+            "تأیید می‌کنم پاکسازی کامل فقط برای همین تاریخ انجام شود.",
+            key=f"confirm_flush_{work_date.isoformat()}",
+        )
+        if st.button(
+            "پاک‌سازی کامل همین تاریخ",
+            key=f"flush_{work_date.isoformat()}",
+            use_container_width=True,
+            disabled=not confirm_flush,
+        ):
             db = get_db_session()
             try:
-                summary = assignment_service.generate_draft_assignments(
-                    db=db, work_date=work_date,
+                result = assignment_service.flush_work_date_operational_data(
+                    db=db,
+                    work_date=work_date,
                     manager_user_id=current_user["id"],
-                    replace_existing_draft=True,
                 )
-                st.success(f"Draft done: {summary['created_assignments']} assignments")
+                st.success(
+                    "پاک‌سازی انجام شد: "
+                    f"assignments={result['assignments_deleted']} | "
+                    f"visits={result['visits_deleted']} | "
+                    f"followups={result['followups_deleted']}"
+                )
+                st.session_state.pop("manager_last_pipeline_result", None)
+                st.rerun()
             except Exception as exc:
-                st.error(f"Draft failed: {exc}")
+                st.error(f"خطا در پاک‌سازی: {exc}")
             finally:
                 db.close()
 
-    with rc2:
-        if st.button("🗺️  Generate Route Order", use_container_width=True):
-            db = get_db_session()
-            try:
-                count = routing_service.apply_routes_for_work_date(
-                    db=db, work_date=work_date,
-                    planner=routing_service.NearestNeighborRoutePlanner(),
-                )
-                st.success(f"Route order generated for {count} assignments.")
-            except Exception as exc:
-                st.error(f"Route generation failed: {exc}")
-            finally:
-                db.close()
+    neu_section_header("عملیات مدیریتی")
+    op1, op2 = st.columns(2)
 
-    with rc3:
-        if st.button("📤  Publish Routes", use_container_width=True):
+    with op1:
+        if st.button(
+            "📤 انتشار مسیرها",
+            key=f"publish_{work_date.isoformat()}",
+            use_container_width=True,
+            disabled=is_locked,
+        ):
             db = get_db_session()
             try:
                 count = assignment_service.publish_assignments(
-                    db=db, work_date=work_date,
+                    db=db,
+                    work_date=work_date,
                     manager_user_id=current_user["id"],
                 )
-                st.success(f"{count} assignments published.")
+                st.success(f"{count} تخصیص منتشر شد.")
+                st.rerun()
             except Exception as exc:
-                st.error(f"Publish failed: {exc}")
+                st.error(f"خطا در انتشار مسیرها: {exc}")
             finally:
                 db.close()
 
-    with rc4:
-        if st.button("🔒  Finalize Unsubmitted", use_container_width=True):
+    with op2:
+        if st.button(
+            "🔒 نهایی‌سازی موارد ثبت‌نشده",
+            key=f"finalize_{work_date.isoformat()}",
+            use_container_width=True,
+            disabled=is_locked,
+        ):
             db = get_db_session()
             try:
                 count = visit_service.finalize_unsubmitted_assignments(
-                    db=db, work_date=work_date,
+                    db=db,
+                    work_date=work_date,
                     actor_user_id=current_user["id"],
                 )
-                st.success(f"{count} unsubmitted finalized as red.")
+                st.success(f"{count} تخصیص ثبت‌نشده به‌صورت خودکار قرمز شد.")
+                st.rerun()
             except Exception as exc:
-                st.error(f"Finalize failed: {exc}")
+                st.error(f"خطا در نهایی‌سازی: {exc}")
             finally:
                 db.close()
 
-    # ── KPIs ──────────────────────────────────────────────────
-    db = get_db_session()
-    try:
-        kpis = reporting_export_service.get_daily_kpis(db, work_date)
-        pending_queue = telesales_service.list_pending_followups(db, as_of_date=work_date)
-    finally:
-        db.close()
-
-    neu_section_header("Daily KPIs")
+    neu_section_header("شاخص‌های روزانه")
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
-        neu_metric("Due Stores", kpis["due_stores"])
+        neu_metric("صف تامین‌پذیر", kpis["due_stores"])
     with k2:
-        neu_metric("Assigned", kpis["assigned_stores"])
+        neu_metric("سبز / زرد / قرمز", f"{kpis['green']} / {kpis['yellow']} / {kpis['red']}")
     with k3:
-        neu_metric("Completed", kpis["completed_visits"])
+        neu_metric("ویزیت تکمیل‌شده", kpis["completed_visits"])
     with k4:
-        neu_metric("G / Y / R", f"{kpis['green']} / {kpis['yellow']} / {kpis['red']}")
+        neu_metric("تخصیص‌شده", kpis["assigned_stores"])
     with k5:
-        neu_metric("Telesales Queue", kpis["telesales_queue_size"])
+        neu_metric("در انتظار تماس تلفنی", kpis["telesales_queue_size"])
 
-    # ── Assignments table ─────────────────────────────────────
-    neu_section_header("Assignments")
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
+    neu_section_header("جدول تخصیص‌ها")
     assignment_df = _load_assignments(work_date)
     if assignment_df.empty:
-        st.info("No assignments for this date.")
+        st.info("برای این تاریخ تخصیصی وجود ندارد.")
     else:
         st.dataframe(assignment_df, use_container_width=True)
 
-    # ── Telesales queue ───────────────────────────────────────
-    neu_section_header("Telesales Pending Queue")
+    neu_section_header("صف در انتظار تماس تلفنی")
     if pending_queue:
         st.dataframe(pd.DataFrame(pending_queue), use_container_width=True)
     else:
-        st.info("No pending telesales items.")
+        st.info("موردی در صف انتظار تماس تلفنی وجود ندارد.")
 
-    # ── Route map ─────────────────────────────────────────────
     visitor_options = _get_visitor_options(work_date)
-
-    neu_section_header("Route Map")
+    neu_section_header("نقشه مسیر")
     selected_code = st.selectbox(
-        "Select Visitor for Route Map & Export",
+        "انتخاب ویزیتور برای نمایش نقشه و دانلود مسیر",
         options=[""] + list(visitor_options.keys()),
+        key=f"manager_map_visitor_{work_date.isoformat()}",
     )
 
     if selected_code:
         selected_id = visitor_options[selected_code]
         route_df = _load_visitor_route_map(work_date, selected_id)
         if route_df.empty:
-            st.info("No route rows for selected visitor/date.")
+            st.info("برای ویزیتور انتخاب‌شده مسیری ثبت نشده است.")
         else:
             render_route_map(route_df)
 
-    # ── Exports ───────────────────────────────────────────────
-    neu_section_header("Exports")
-    exp1, exp2 = st.columns(2)
+    neu_section_header("خروجی‌ها")
+    ex1, ex2 = st.columns(2)
 
-    with exp1:
+    with ex1:
         if selected_code:
             db = get_db_session()
             try:
                 route_buf = reporting_export_service.export_visitor_route_excel(
-                    db=db, work_date=work_date,
+                    db=db,
+                    work_date=work_date,
                     visitor_id=visitor_options[selected_code],
                 )
                 st.download_button(
-                    label=f"📥  Download Route — {selected_code}",
+                    label=f"📥 دانلود مسیر {selected_code}",
                     data=route_buf.getvalue(),
                     file_name=f"route_{work_date.isoformat()}_{selected_code}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -295,16 +445,18 @@ def render_manager_dashboard(current_user: dict) -> None:
             finally:
                 db.close()
 
-    with exp2:
+    with ex2:
         db = get_db_session()
         try:
             summary_buf = reporting_export_service.export_manager_daily_summary_excel(
-                db=db, work_date=work_date,
+                db=db,
+                work_date=work_date,
             )
         finally:
             db.close()
+
         st.download_button(
-            label="📥  Download Daily Summary",
+            label="📥 دانلود گزارش کامل روزانه",
             data=summary_buf.getvalue(),
             file_name=f"summary_{work_date.isoformat()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

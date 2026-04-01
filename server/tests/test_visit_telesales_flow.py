@@ -11,7 +11,7 @@ from server.db.database import get_db_session
 def main():
     db = get_db_session()
     try:
-        work_date = date(2026, 3, 31)
+        work_date = date.today()
 
         assignment = (
             db.query(DailyAssignment)

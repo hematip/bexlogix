@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date
 from math import asin, cos, radians, sin, sqrt
+from urllib.parse import quote
+from urllib.request import urlopen
 
 from sqlalchemy.orm import Session
 
+from server.app import config
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.models.daily_assignment import DailyAssignment
 from server.app.models.daily_visitor_status import DailyVisitorStatus
@@ -41,6 +45,20 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     )
     c = 2 * asin(sqrt(a))
     return radius_km * c
+
+
+def _build_osrm_coordinate_segment(points: list[tuple[float, float]]) -> str:
+    coordinates = [f"{lon:.8f},{lat:.8f}" for lat, lon in points]
+    coord_segment = ";".join(coordinates)
+    return quote(coord_segment, safe=";,.-0123456789")
+
+
+def _request_osrm_payload(url: str, timeout_seconds: float) -> dict:
+    with urlopen(url, timeout=timeout_seconds) as response:
+        status_code = getattr(response, "status", None)
+        if status_code is not None and int(status_code) >= 400:
+            raise ValueError(f"OSRM HTTP status: {status_code}")
+        return json.loads(response.read().decode("utf-8"))
 
 
 class NearestNeighborRoutePlanner(RoutePlanner):
@@ -103,6 +121,175 @@ class NearestNeighborRoutePlanner(RoutePlanner):
         return planned
 
 
+class OSRMRoutePlanner(RoutePlanner):
+    def __init__(
+        self,
+        base_url: str | None = None,
+        timeout_seconds: float | None = None,
+        fallback_planner: RoutePlanner | None = None,
+    ) -> None:
+        self.base_url = (base_url or config.OSRM_BASE_URL or "").strip().rstrip("/")
+        self.timeout_seconds = (
+            float(timeout_seconds)
+            if timeout_seconds is not None
+            else float(config.OSRM_TIMEOUT_SECONDS)
+        )
+        self.fallback_planner = fallback_planner or NearestNeighborRoutePlanner()
+
+    def _build_trip_url(
+        self,
+        start_lat: float,
+        start_lon: float,
+        stops: list[dict],
+    ) -> str:
+        points = [(start_lat, start_lon)] + [
+            (float(stop["lat"]), float(stop["lon"])) for stop in stops
+        ]
+        encoded_coords = _build_osrm_coordinate_segment(points)
+
+        return (
+            f"{self.base_url}/trip/v1/driving/{encoded_coords}"
+            "?source=first&roundtrip=false&overview=false&steps=false&geometries=geojson"
+        )
+
+    def _request_trip_payload(self, url: str) -> dict:
+        return _request_osrm_payload(url=url, timeout_seconds=self.timeout_seconds)
+
+    def _to_route_stops_from_payload(
+        self,
+        payload: dict,
+        stops: list[dict],
+    ) -> list[RouteStop]:
+        if payload.get("code") != "Ok":
+            raise ValueError(f"OSRM error: {payload.get('message') or payload.get('code')}")
+
+        waypoints = payload.get("waypoints") or []
+        trips = payload.get("trips") or []
+        if not trips:
+            raise ValueError("OSRM did not return trips.")
+        if len(waypoints) != len(stops) + 1:
+            raise ValueError("OSRM waypoint count mismatch.")
+
+        optimized_order_by_stop_index: dict[int, int] = {}
+        for input_index, waypoint in enumerate(waypoints):
+            if input_index == 0:
+                continue
+            waypoint_index = waypoint.get("waypoint_index")
+            if waypoint_index is None:
+                raise ValueError("OSRM waypoint_index is missing.")
+            optimized_order = int(waypoint_index)
+            if optimized_order <= 0:
+                raise ValueError("OSRM returned invalid stop order.")
+            optimized_order_by_stop_index[input_index - 1] = optimized_order
+
+        if len(optimized_order_by_stop_index) != len(stops):
+            raise ValueError("OSRM did not order all route stops.")
+
+        trip = trips[0]
+        legs = trip.get("legs") or []
+        if len(legs) < len(stops):
+            raise ValueError("OSRM legs count is shorter than stops.")
+
+        cumulative_km_by_order: dict[int, float] = {}
+        cumulative_distance_km = 0.0
+        for leg_index, leg in enumerate(legs, start=1):
+            cumulative_distance_km += float(leg.get("distance") or 0.0) / 1000.0
+            cumulative_km_by_order[leg_index] = round(cumulative_distance_km, 3)
+
+        planned = [
+            RouteStop(
+                assignment_id=int(stops[stop_index]["assignment_id"]),
+                route_order=int(route_order),
+                route_distance_km=cumulative_km_by_order.get(int(route_order)),
+            )
+            for stop_index, route_order in optimized_order_by_stop_index.items()
+        ]
+
+        planned.sort(key=lambda item: item.route_order)
+        return planned
+
+    def plan_route(
+        self,
+        start_lat: float | None,
+        start_lon: float | None,
+        stops: list[dict],
+    ) -> list[RouteStop]:
+        if not stops:
+            return []
+
+        if start_lat is None or start_lon is None:
+            return self.fallback_planner.plan_route(start_lat, start_lon, stops)
+        if not self.base_url:
+            return self.fallback_planner.plan_route(start_lat, start_lon, stops)
+
+        try:
+            url = self._build_trip_url(float(start_lat), float(start_lon), stops)
+            payload = self._request_trip_payload(url)
+            planned = self._to_route_stops_from_payload(payload, stops)
+            if not planned or len(planned) != len(stops):
+                raise ValueError("OSRM planning was incomplete.")
+            return planned
+        except Exception:
+            return self.fallback_planner.plan_route(start_lat, start_lon, stops)
+
+
+def fetch_osrm_route_geometry(
+    start_lat: float | None,
+    start_lon: float | None,
+    ordered_stops: list[dict],
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+) -> list[list[float]]:
+    if start_lat is None or start_lon is None or not ordered_stops:
+        return []
+
+    resolved_base_url = (base_url or config.OSRM_BASE_URL or "").strip().rstrip("/")
+    if not resolved_base_url:
+        return []
+
+    try:
+        timeout = (
+            float(timeout_seconds)
+            if timeout_seconds is not None
+            else float(config.OSRM_TIMEOUT_SECONDS)
+        )
+
+        points = [(float(start_lat), float(start_lon))] + [
+            (float(stop["lat"]), float(stop["lon"])) for stop in ordered_stops
+        ]
+        if len(points) < 2:
+            return []
+
+        encoded_coords = _build_osrm_coordinate_segment(points)
+        url = (
+            f"{resolved_base_url}/route/v1/driving/{encoded_coords}"
+            "?overview=full&steps=false&geometries=geojson"
+        )
+        payload = _request_osrm_payload(url=url, timeout_seconds=timeout)
+
+        if payload.get("code") != "Ok":
+            return []
+
+        routes = payload.get("routes") or []
+        if not routes:
+            return []
+
+        geometry = routes[0].get("geometry") or {}
+        coordinates = geometry.get("coordinates") or []
+        if not coordinates:
+            return []
+
+        normalized: list[list[float]] = []
+        for pair in coordinates:
+            if not isinstance(pair, list) or len(pair) < 2:
+                continue
+            normalized.append([float(pair[0]), float(pair[1])])
+
+        return normalized
+    except Exception:
+        return []
+
+
 def _get_start_point(db: Session, work_date: date, visitor_id: int) -> tuple[float | None, float | None]:
     daily_row = (
         db.query(DailyVisitorStatus)
@@ -112,9 +299,8 @@ def _get_start_point(db: Session, work_date: date, visitor_id: int) -> tuple[flo
         )
         .first()
     )
-    if daily_row:
-        if daily_row.start_lat is not None and daily_row.start_lon is not None:
-            return float(daily_row.start_lat), float(daily_row.start_lon)
+    if daily_row and daily_row.start_lat is not None and daily_row.start_lon is not None:
+        return float(daily_row.start_lat), float(daily_row.start_lon)
 
     profile = db.query(VisitorProfile).filter(VisitorProfile.id == visitor_id).first()
     if not profile:

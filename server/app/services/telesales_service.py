@@ -10,6 +10,7 @@ from server.app.models.store import Store
 from server.app.models.telesales_followup import TelesalesFollowup
 from server.app.models.user import User
 from server.app.models.visit import Visit
+from server.app.models.visitor_profile import VisitorProfile
 from server.app.services import scheduling_service
 from server.app.services.constants import TELESALES_POSTPONE_DELAY_DAYS
 
@@ -65,8 +66,10 @@ def create_followup_for_red_visit(
 
 def list_pending_followups(db: Session, as_of_date: date | None = None) -> list[dict]:
     query = (
-        db.query(TelesalesFollowup, Store)
+        db.query(TelesalesFollowup, Store, Visit, VisitorProfile)
         .join(Store, Store.id == TelesalesFollowup.store_id)
+        .join(Visit, Visit.id == TelesalesFollowup.visit_id)
+        .outerjoin(VisitorProfile, VisitorProfile.id == Visit.visitor_id)
         .filter(TelesalesFollowup.result.is_(None))
     )
     if as_of_date is not None:
@@ -74,7 +77,7 @@ def list_pending_followups(db: Session, as_of_date: date | None = None) -> list[
 
     rows = query.order_by(TelesalesFollowup.followup_date, Store.store_code).all()
     pending = []
-    for followup, store in rows:
+    for followup, store, visit, visitor in rows:
         pending.append(
             {
                 "followup_id": followup.id,
@@ -82,7 +85,20 @@ def list_pending_followups(db: Session, as_of_date: date | None = None) -> list[
                 "store_id": store.id,
                 "store_code": store.store_code,
                 "store_name": store.store_name,
+                "store_region": store.region,
+                "store_address": store.address,
+                "store_lat": store.lat,
+                "store_lon": store.lon,
                 "visit_id": followup.visit_id,
+                "visit_date": visit.visit_date.isoformat() if visit else None,
+                "visit_result": visit.result if visit else None,
+                "visit_note": visit.note if visit else None,
+                "visitor_code": visitor.visitor_code if visitor else None,
+                "unavailable_reason": (
+                    visit.note
+                    if visit and visit.note
+                    else "ویزیت قرمز ثبت شده (عدم دسترسی/عدم انجام ویزیت)"
+                ),
                 "note": followup.note,
             }
         )

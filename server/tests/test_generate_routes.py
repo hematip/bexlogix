@@ -2,8 +2,7 @@ from datetime import date
 
 from server.app.models.daily_assignment import DailyAssignment
 from server.app.models.user import User
-from server.app.services import assignment_service, import_service, import_users_service
-from server.app.services import import_visitors_service, routing_service
+from server.app.services import assignment_service, import_service, import_users_service, routing_service
 from server.app.services.import_daily_visitor_status_service import (
     import_daily_visitor_statuses_from_excel,
 )
@@ -11,21 +10,20 @@ from server.db.create_tables import create_tables
 from server.db.database import get_db_session
 
 
-def main():
+def main() -> None:
     create_tables()
 
     db = get_db_session()
     try:
-        import_service.import_stores_from_excel("data/stores_sample.xlsx", db)
-        import_users_service.import_users_from_excel("data/users_seed_sample.xlsx", db)
-        import_visitors_service.import_visitor_profiles_from_excel("data/visitors_sample.xlsx", db)
-        import_daily_visitor_statuses_from_excel("data/daily_visitor_status_sample.xlsx", db)
+        import_service.import_stores_from_excel("data/stores_sample_300.xlsx", db)
+        import_users_service.import_users_from_excel("data/users_seed_sample_10_visitors.xlsx", db)
+        import_daily_visitor_statuses_from_excel("data/daily_visitor_status_sample_10.xlsx", db)
 
         manager = db.query(User).filter(User.username == "manager1").first()
         if not manager:
             raise ValueError("manager1 was not found after users import.")
 
-        work_date = date(2026, 3, 31)
+        work_date = date.today()
         existing_non_draft_count = (
             db.query(DailyAssignment)
             .filter(
@@ -58,7 +56,13 @@ def main():
         planned_count = routing_service.apply_routes_for_work_date(
             db=db,
             work_date=work_date,
-            planner=routing_service.NearestNeighborRoutePlanner(),
+            planner=routing_service.OSRMRoutePlanner(
+                fallback_planner=routing_service.NearestNeighborRoutePlanner(),
+            ),
+        )
+        quality = assignment_service.evaluate_route_quality_vs_round_robin(
+            db=db,
+            work_date=work_date,
         )
         published_count = assignment_service.publish_assignments(
             db=db,
@@ -68,6 +72,7 @@ def main():
 
         print(f"Draft summary: {summary}")
         print(f"Route planned assignments: {planned_count}")
+        print(f"Route quality: {quality}")
         print(f"Published assignments: {published_count}")
     finally:
         db.close()

@@ -6,7 +6,7 @@ def main():
     db = get_db_session()
 
     try:
-        file_path = "data/stores_sample.xlsx"
+        file_path = "data/stores_sample_300.xlsx"
         processed_count = import_stores_from_excel(file_path, db)
         print(f"{processed_count} store rows processed successfully.")
     finally:

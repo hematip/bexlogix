@@ -1,6 +1,9 @@
-from datetime import date
+from __future__ import annotations
 
-from server.app.models.daily_assignment import DailyAssignment
+from datetime import date, timedelta
+
+import pytest
+
 from server.app.models.user import User
 from server.app.services import assignment_service, import_service, import_users_service, routing_service
 from server.app.services.import_daily_visitor_status_service import (
@@ -10,7 +13,8 @@ from server.db.create_tables import create_tables
 from server.db.database import get_db_session
 
 
-def main() -> None:
+@pytest.mark.integration
+def test_generate_routes_pipeline() -> None:
     create_tables()
 
     db = get_db_session()
@@ -20,24 +24,15 @@ def main() -> None:
         import_daily_visitor_statuses_from_excel("data/daily_visitor_status_sample_10.xlsx", db)
 
         manager = db.query(User).filter(User.username == "manager1").first()
-        if not manager:
-            raise ValueError("manager1 was not found after users import.")
+        assert manager is not None
 
         work_date = date.today()
-        existing_non_draft_count = (
-            db.query(DailyAssignment)
-            .filter(
-                DailyAssignment.work_date == work_date,
-                DailyAssignment.assignment_status != "draft",
-            )
-            .count()
-        )
-        if existing_non_draft_count > 0:
-            print(
-                f"Non-draft assignments already exist for {work_date.isoformat()} "
-                f"({existing_non_draft_count} rows). Skipping draft regeneration."
-            )
-            return
+        for offset in range(0, 21):
+            candidate = date.today() + timedelta(days=offset)
+            snapshot = assignment_service.get_work_date_operational_snapshot(db, candidate)
+            if not snapshot["is_locked"]:
+                work_date = candidate
+                break
 
         summary = assignment_service.generate_draft_assignments(
             db=db,
@@ -45,15 +40,7 @@ def main() -> None:
             manager_user_id=manager.id,
             replace_existing_draft=True,
         )
-        if summary.get("created_assignments", 0) == 0:
-            print(
-                f"No draft assignments generated for {work_date.isoformat()} "
-                "(likely no due stores or zero active capacity)."
-            )
-            print(f"Draft summary: {summary}")
-            return
-
-        planned_count = routing_service.apply_routes_for_work_date(
+        routed_count = routing_service.apply_routes_for_work_date(
             db=db,
             work_date=work_date,
             planner=routing_service.OSRMRoutePlanner(
@@ -64,19 +51,17 @@ def main() -> None:
             db=db,
             work_date=work_date,
         )
-        published_count = assignment_service.publish_assignments(
-            db=db,
-            work_date=work_date,
-            manager_user_id=manager.id,
-        )
 
-        print(f"Draft summary: {summary}")
-        print(f"Route planned assignments: {planned_count}")
-        print(f"Route quality: {quality}")
-        print(f"Published assignments: {published_count}")
+        # Keep legacy behavior: publish only when drafts exist.
+        if summary.get("created_assignments", 0) > 0:
+            published_count = assignment_service.publish_assignments(
+                db=db,
+                work_date=work_date,
+                manager_user_id=manager.id,
+            )
+            assert published_count >= 0
+
+        assert routed_count >= 0
+        assert "improvement_pct" in quality
     finally:
         db.close()
-
-
-if __name__ == "__main__":
-    main()

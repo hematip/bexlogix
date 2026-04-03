@@ -15,6 +15,8 @@ from client.pages.telesales_panel import render_telesales_panel
 from client.pages.visitor_panel import render_visitor_panel
 from client.styles.neumorphism import inject_global_css, render_login_logo, role_badge_html
 from server.app.enums.roles import UserRole
+from server.app.repositories import user_repository
+from server.db.database import get_db_session
 from server.db.startup_seed import seed_if_empty
 
 VIEW_BY_ROLE = {
@@ -39,6 +41,30 @@ def _get_query_view() -> str | None:
 
 def _set_query_view(view: str) -> None:
     st.query_params["view"] = view
+
+
+def _validate_current_user(user_payload: dict | None) -> dict | None:
+    if not user_payload:
+        return None
+
+    db = get_db_session()
+    try:
+        db_user = user_repository.get_user_by_id(db, int(user_payload["id"]))
+    finally:
+        db.close()
+
+    if not db_user or not db_user.is_active:
+        return None
+    if db_user.username != user_payload["username"]:
+        return None
+    if db_user.role != user_payload["role"]:
+        return None
+
+    return {
+        "id": int(db_user.id),
+        "username": str(db_user.username),
+        "role": str(db_user.role),
+    }
 
 
 def _render_topbar(current_user: dict) -> bool:
@@ -73,7 +99,12 @@ def main() -> None:
     requested_view = _get_query_view()
     current_user = auth_state.get_current_user()
     if current_user is None:
+        current_user = auth_state.restore_session_from_query_token()
+
+    current_user = _validate_current_user(current_user)
+    if current_user is None:
         auth_state.logout_user()
+        auth_state.clear_persistent_login_query()
         if requested_view != "login":
             _set_query_view("login")
             st.rerun()
@@ -94,6 +125,7 @@ def main() -> None:
 
     if _render_topbar(current_user):
         auth_state.logout_user()
+        auth_state.clear_persistent_login_query()
         _set_query_view("login")
         st.rerun()
 

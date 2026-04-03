@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import pandas as pd
@@ -5,16 +7,11 @@ import pandas as pd
 DATA_DIR = Path("data")
 
 
-def main() -> None:
-    stores_path = DATA_DIR / "stores_sample_300.xlsx"
-    visitors_path = DATA_DIR / "visitors_sample_10.xlsx"
-    daily_status_path = DATA_DIR / "daily_visitor_status_sample_10.xlsx"
-    users_path = DATA_DIR / "users_seed_sample_10_visitors.xlsx"
-
-    stores_df = pd.read_excel(stores_path)
-    visitors_df = pd.read_excel(visitors_path)
-    daily_status_df = pd.read_excel(daily_status_path)
-    users_df = pd.read_excel(users_path)
+def test_sample_file_dimensions_and_schema() -> None:
+    stores_df = pd.read_excel(DATA_DIR / "stores_sample_300.xlsx")
+    visitors_df = pd.read_excel(DATA_DIR / "visitors_sample_10.xlsx")
+    daily_status_df = pd.read_excel(DATA_DIR / "daily_visitor_status_sample_10.xlsx")
+    users_df = pd.read_excel(DATA_DIR / "users_seed_sample_10_visitors.xlsx")
 
     assert len(stores_df) == 300, "stores_sample_300.xlsx must contain 300 rows."
     assert len(visitors_df) == 10, "visitors_sample_10.xlsx must contain 10 rows."
@@ -39,9 +36,3 @@ def main() -> None:
         "daily_visitor_status_sample_10.xlsx must contain the new daily contract columns. "
         f"Missing: {sorted(missing_daily_columns)}"
     )
-
-    print("Sample files dimension and schema test passed.")
-
-
-if __name__ == "__main__":
-    main()

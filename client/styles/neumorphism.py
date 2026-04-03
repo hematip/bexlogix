@@ -701,6 +701,18 @@ def neu_section_header(title: str) -> None:
     st.markdown(f'<div class="section-header">{title}</div>', unsafe_allow_html=True)
 
 
+def render_page_title(title: str) -> None:
+    st.markdown(f'<div class="page-title">{title}</div>', unsafe_allow_html=True)
+
+
+def render_panel_description(text: str) -> None:
+    st.markdown(f'<div class="panel-description">{text}</div>', unsafe_allow_html=True)
+
+
+def render_panel_columns_description(text: str) -> None:
+    st.markdown(f'<div class="panel-description-columns">{text}</div>', unsafe_allow_html=True)
+
+
 def status_badge(text: str) -> str:
     normalized = str(text or "").strip().lower()
     css_map = {

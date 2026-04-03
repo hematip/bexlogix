@@ -73,5 +73,12 @@ def render_login_page() -> None:
             "role": user.role,
         }
     )
+    auth_state.set_persistent_login_query(
+        {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+        }
+    )
     st.query_params["view"] = VIEW_BY_ROLE.get(user.role, "login")
     st.rerun()

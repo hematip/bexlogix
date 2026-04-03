@@ -126,6 +126,52 @@ def export_manager_daily_summary_excel(db: Session, work_date: date) -> BytesIO:
     kpis = get_daily_kpis(db, work_date)
     kpi_df = pd.DataFrame([kpis])
 
+    assignment_detail_columns = [
+        "work_date",
+        "assignment_id",
+        "visitor_code",
+        "store_code",
+        "store_name",
+        "region",
+        "address",
+        "lat",
+        "lon",
+        "route_order",
+        "route_distance_km",
+        "assignment_status",
+        "published_at",
+        "visit_id",
+        "visit_date",
+        "visit_result",
+        "visit_note",
+    ]
+    visit_detail_columns = [
+        "work_date",
+        "visit_id",
+        "assignment_id",
+        "visit_date",
+        "visitor_code",
+        "store_code",
+        "store_name",
+        "result",
+        "note",
+    ]
+    telesales_detail_columns = [
+        "work_date",
+        "followup_id",
+        "followup_date",
+        "visitor_code",
+        "store_code",
+        "store_name",
+        "visit_id",
+        "visit_result",
+        "contact_status",
+        "followup_result",
+        "queue_status",
+        "created_by",
+        "note",
+    ]
+
     assignment_rows = (
         db.query(DailyAssignment, VisitorProfile, Store, Visit)
         .join(VisitorProfile, VisitorProfile.id == DailyAssignment.visitor_id)
@@ -182,8 +228,8 @@ def export_manager_daily_summary_excel(db: Session, work_date: date) -> BytesIO:
                 }
             )
 
-    assignment_detail_df = pd.DataFrame(assignment_detail_rows)
-    visit_detail_df = pd.DataFrame(visit_detail_rows)
+    assignment_detail_df = pd.DataFrame(assignment_detail_rows, columns=assignment_detail_columns)
+    visit_detail_df = pd.DataFrame(visit_detail_rows, columns=visit_detail_columns)
 
     telesales_rows = (
         db.query(TelesalesFollowup, Store, Visit, DailyAssignment, VisitorProfile)
@@ -215,7 +261,7 @@ def export_manager_daily_summary_excel(db: Session, work_date: date) -> BytesIO:
             }
         )
 
-    telesales_detail_df = pd.DataFrame(telesales_detail_rows)
+    telesales_detail_df = pd.DataFrame(telesales_detail_rows, columns=telesales_detail_columns)
 
     if assignment_detail_df.empty:
         visitor_summary_df = pd.DataFrame(

@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 from io import BytesIO
 
 import pandas as pd
+import pytest
 
 from server.app.models.daily_assignment import DailyAssignment
 from server.app.services.reporting_export_service import export_manager_daily_summary_excel
 from server.db.database import get_db_session
-
 
 EXPECTED_SHEETS = [
     "kpis",
@@ -18,13 +20,13 @@ EXPECTED_SHEETS = [
 
 def _assert_columns(df: pd.DataFrame, required_columns: list[str], sheet_name: str) -> None:
     missing_columns = [column for column in required_columns if column not in df.columns]
-    if missing_columns:
-        raise AssertionError(
-            f"Sheet '{sheet_name}' is missing required columns: {', '.join(missing_columns)}"
-        )
+    assert not missing_columns, (
+        f"Sheet '{sheet_name}' is missing required columns: {', '.join(missing_columns)}"
+    )
 
 
-def main() -> None:
+@pytest.mark.integration
+def test_daily_summary_detailed_export_contract() -> None:
     db = get_db_session()
     try:
         row = (
@@ -33,9 +35,7 @@ def main() -> None:
             .first()
         )
         if not row:
-            print("No assignment data found. Skipping summary export test.")
-            return
-
+            pytest.skip("No assignment data found. Skipping summary export test.")
         work_date = row[0]
         buffer = export_manager_daily_summary_excel(db=db, work_date=work_date)
     finally:
@@ -116,9 +116,3 @@ def main() -> None:
         ],
         "telesales_detail",
     )
-
-    print("Daily summary detailed export test passed.")
-
-
-if __name__ == "__main__":
-    main()

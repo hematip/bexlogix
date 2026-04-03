@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from datetime import date
+
+import pytest
 
 from server.app.models.daily_assignment import DailyAssignment
 from server.app.models.user import User
@@ -8,11 +12,11 @@ from server.app.services import telesales_service, visit_service
 from server.db.database import get_db_session
 
 
-def main():
+@pytest.mark.service
+def test_visit_to_telesales_flow() -> None:
     db = get_db_session()
     try:
         work_date = date.today()
-
         assignment = (
             db.query(DailyAssignment)
             .outerjoin(Visit, Visit.assignment_id == DailyAssignment.id)
@@ -25,16 +29,14 @@ def main():
             .first()
         )
         if not assignment:
-            print("No published assignment without visit found. Run test_generate_routes first.")
-            return
+            pytest.skip("No published assignment without visit found. Run route generation first.")
 
         visitor_profile = (
             db.query(VisitorProfile)
             .filter(VisitorProfile.id == assignment.visitor_id)
             .first()
         )
-        if not visitor_profile:
-            raise ValueError("Visitor profile not found for assignment.")
+        assert visitor_profile is not None
 
         visit = visit_service.submit_visit_result(
             db=db,
@@ -43,16 +45,13 @@ def main():
             result="red",
             note="Store closed during visit window.",
         )
-        print(f"Visit created with id {visit.id} and result {visit.result}.")
+        assert visit.result == "red"
 
         pending = telesales_service.list_pending_followups(db, as_of_date=work_date)
-        if not pending:
-            print("No pending followups found after red visit.")
-            return
+        assert pending
 
         telesales_user = db.query(User).filter(User.username == "telesales1").first()
-        if not telesales_user:
-            raise ValueError("telesales1 user not found.")
+        assert telesales_user is not None
 
         followup_id = pending[0]["followup_id"]
         followup = telesales_service.submit_followup_result(
@@ -63,13 +62,7 @@ def main():
             result="sale_done",
             note="Order confirmed by phone.",
         )
-        print(
-            f"Followup {followup.id} saved. contact_status={followup.contact_status}, "
-            f"result={followup.result}"
-        )
+        assert followup.result == "sale_done"
+        assert followup.contact_status == "reached"
     finally:
         db.close()
-
-
-if __name__ == "__main__":
-    main()

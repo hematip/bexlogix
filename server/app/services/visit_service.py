@@ -2,22 +2,26 @@ from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
+from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.roles import UserRole
 from server.app.enums.visit_result import VisitResult
-from server.app.models.daily_assignment import DailyAssignment
-from server.app.models.user import User
 from server.app.models.visit import Visit
-from server.app.models.visitor_profile import VisitorProfile
+from server.app.repositories import (
+    assignment_repository,
+    user_repository,
+    visit_repository,
+    visitor_repository,
+)
 from server.app.services import scheduling_service, telesales_service
 
 
 def _assert_manager_user(db: Session, user_id: int) -> None:
-    user = db.query(User).filter(User.id == user_id).first()
+    user = user_repository.get_user_by_id(db, user_id)
     if not user:
-        raise ValueError(f"User id {user_id} not found.")
+        raise ValidationError(f"User id {user_id} not found.")
     if user.role != UserRole.MANAGER.value:
-        raise ValueError("Only manager users can finalize unsubmitted assignments.")
+        raise AppPermissionError("Only manager users can finalize unsubmitted assignments.")
 
 
 def submit_visit_result(
@@ -31,35 +35,23 @@ def submit_visit_result(
     normalized_result = str(result or "").strip().lower()
     allowed_results = {item.value for item in VisitResult}
     if normalized_result not in allowed_results:
-        raise ValueError(f"Invalid visit result: {result}")
+        raise ValidationError(f"Invalid visit result: {result}")
 
-    assignment = (
-        db.query(DailyAssignment)
-        .filter(DailyAssignment.id == assignment_id)
-        .first()
-    )
+    assignment = assignment_repository.get_assignment_by_id(db, assignment_id)
     if not assignment:
-        raise ValueError(f"Assignment id {assignment_id} not found.")
+        raise ValidationError(f"Assignment id {assignment_id} not found.")
     if assignment.assignment_status != AssignmentStatus.PUBLISHED.value:
-        raise ValueError("Visit submission is allowed only for published assignments.")
+        raise DomainError("Visit submission is allowed only for published assignments.")
 
-    visitor_profile = (
-        db.query(VisitorProfile)
-        .filter(VisitorProfile.id == assignment.visitor_id)
-        .first()
-    )
+    visitor_profile = visitor_repository.get_profile_by_id(db, assignment.visitor_id)
     if not visitor_profile:
-        raise ValueError("Visitor profile linked to assignment was not found.")
+        raise ValidationError("Visitor profile linked to assignment was not found.")
     if visitor_profile.user_id != visitor_user_id:
-        raise ValueError("You can only submit visit results for your own assignments.")
+        raise AppPermissionError("You can only submit visit results for your own assignments.")
 
-    existing_visit = (
-        db.query(Visit)
-        .filter(Visit.assignment_id == assignment.id)
-        .first()
-    )
+    existing_visit = visit_repository.get_visit_by_assignment_id(db, assignment.id)
     if existing_visit:
-        raise ValueError("Visit result is already submitted for this assignment.")
+        raise DomainError("Visit result is already submitted for this assignment.")
 
     visit_note = str(note or "").strip() or None
     visit_date = assignment.work_date if submitted_at is None else submitted_at.date()
@@ -104,15 +96,9 @@ def submit_visit_result(
 def finalize_unsubmitted_assignments(db: Session, work_date: date, actor_user_id: int) -> int:
     _assert_manager_user(db, actor_user_id)
 
-    pending_assignments = (
-        db.query(DailyAssignment)
-        .outerjoin(Visit, Visit.assignment_id == DailyAssignment.id)
-        .filter(
-            DailyAssignment.work_date == work_date,
-            DailyAssignment.assignment_status == AssignmentStatus.PUBLISHED.value,
-            Visit.id.is_(None),
-        )
-        .all()
+    pending_assignments = visit_repository.list_pending_published_assignments_without_visit(
+        db=db,
+        work_date=work_date,
     )
 
     if not pending_assignments:

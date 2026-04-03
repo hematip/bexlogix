@@ -7,25 +7,29 @@ from sqlalchemy.orm import Session
 
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.roles import UserRole
+from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError
 from server.app.models.daily_assignment import DailyAssignment
-from server.app.models.daily_visitor_status import DailyVisitorStatus
 from server.app.models.store import Store
 from server.app.models.store_schedule_state import StoreScheduleState
-from server.app.models.telesales_followup import TelesalesFollowup
-from server.app.models.user import User
-from server.app.models.visit import Visit
-from server.app.models.visitor_profile import VisitorProfile
+from server.app.repositories import (
+    assignment_repository,
+    store_repository,
+    telesales_followup_repository,
+    user_repository,
+    visit_repository,
+    visitor_repository,
+)
 from server.app.services import routing_service, scheduling_service
 
 QUALITY_GATE_THRESHOLD_PCT = 20.0
 
 
 def _assert_manager_user(db: Session, manager_user_id: int) -> None:
-    user = db.query(User).filter(User.id == manager_user_id).first()
+    user = user_repository.get_user_by_id(db, manager_user_id)
     if not user:
-        raise ValueError(f"Manager user id {manager_user_id} not found.")
+        raise ValidationError(f"Manager user id {manager_user_id} not found.")
     if user.role != UserRole.MANAGER.value:
-        raise ValueError("Only manager users can generate or publish assignments.")
+        raise AppPermissionError("Only manager users can generate or publish assignments.")
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -41,29 +45,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def get_active_visitor_day_contexts(db: Session, work_date: date) -> list[dict]:
-    rows = (
-        db.query(
-            VisitorProfile.id.label("visitor_id"),
-            VisitorProfile.visitor_code,
-            VisitorProfile.default_start_lat,
-            VisitorProfile.default_start_lon,
-            VisitorProfile.default_capacity,
-            DailyVisitorStatus.start_lat,
-            DailyVisitorStatus.start_lon,
-            DailyVisitorStatus.capacity,
-            DailyVisitorStatus.is_active_today,
-            User.is_active.label("user_is_active"),
-            VisitorProfile.is_active.label("profile_is_active"),
-        )
-        .join(User, User.id == VisitorProfile.user_id)
-        .outerjoin(
-            DailyVisitorStatus,
-            (DailyVisitorStatus.visitor_id == VisitorProfile.id)
-            & (DailyVisitorStatus.work_date == work_date),
-        )
-        .filter(User.role == UserRole.VISITOR.value)
-        .all()
-    )
+    rows = visitor_repository.list_active_day_context_rows(db=db, work_date=work_date)
 
     contexts: list[dict] = []
     for row in rows:
@@ -105,12 +87,8 @@ def _get_due_stores_sorted(db: Session, work_date: date) -> list[Store]:
     if not due_store_ids:
         return []
 
-    stores = db.query(Store).filter(Store.id.in_(due_store_ids)).all()
-    states = (
-        db.query(StoreScheduleState)
-        .filter(StoreScheduleState.store_id.in_(due_store_ids))
-        .all()
-    )
+    stores = store_repository.list_stores_by_ids(db=db, store_ids=due_store_ids)
+    states = store_repository.list_schedule_states_by_store_ids(db=db, store_ids=due_store_ids)
     states_by_store_id = {state.store_id: state for state in states}
 
     def sort_key(store: Store):
@@ -124,18 +102,7 @@ def _get_due_stores_sorted(db: Session, work_date: date) -> list[Store]:
 
 
 def _delete_existing_drafts(db: Session, work_date: date) -> int:
-    existing_drafts = (
-        db.query(DailyAssignment)
-        .filter(
-            DailyAssignment.work_date == work_date,
-            DailyAssignment.assignment_status == AssignmentStatus.DRAFT.value,
-        )
-        .all()
-    )
-    count = len(existing_drafts)
-    for row in existing_drafts:
-        db.delete(row)
-    return count
+    return assignment_repository.delete_draft_assignments_for_date(db=db, work_date=work_date)
 
 
 def _select_closest_store_for_visitor(
@@ -239,16 +206,12 @@ def generate_draft_assignments(
 ) -> dict:
     _assert_manager_user(db, manager_user_id)
 
-    existing_non_draft_count = (
-        db.query(DailyAssignment)
-        .filter(
-            DailyAssignment.work_date == work_date,
-            DailyAssignment.assignment_status != AssignmentStatus.DRAFT.value,
-        )
-        .count()
+    existing_non_draft_count = assignment_repository.count_non_draft_assignments_for_date(
+        db=db,
+        work_date=work_date,
     )
     if existing_non_draft_count > 0:
-        raise ValueError(
+        raise DomainError(
             "Non-draft assignments already exist for this date. "
             "MVP policy blocks draft regeneration after publish/finalize."
         )
@@ -256,16 +219,12 @@ def generate_draft_assignments(
     if replace_existing_draft:
         _delete_existing_drafts(db, work_date)
     else:
-        existing_draft_count = (
-            db.query(DailyAssignment)
-            .filter(
-                DailyAssignment.work_date == work_date,
-                DailyAssignment.assignment_status == AssignmentStatus.DRAFT.value,
-            )
-            .count()
+        existing_draft_count = assignment_repository.count_draft_assignments_for_date(
+            db=db,
+            work_date=work_date,
         )
         if existing_draft_count > 0:
-            raise ValueError("Draft assignments already exist for this date.")
+            raise DomainError("Draft assignments already exist for this date.")
 
     visitors = get_active_visitor_day_contexts(db, work_date)
     due_stores = _get_due_stores_sorted(db, work_date)
@@ -313,28 +272,21 @@ def get_unassigned_due_store_ids(db: Session, work_date: date) -> list[int]:
     if not due_store_ids:
         return []
 
-    assigned_rows = (
-        db.query(DailyAssignment.store_id)
-        .filter(DailyAssignment.work_date == work_date)
-        .all()
+    assigned_store_ids = set(
+        assignment_repository.list_assigned_store_ids_for_date(db=db, work_date=work_date)
     )
-    assigned_store_ids = {store_id for (store_id,) in assigned_rows}
     return sorted(due_store_ids - assigned_store_ids)
 
 
 def publish_assignments(db: Session, work_date: date, manager_user_id: int) -> int:
     _assert_manager_user(db, manager_user_id)
 
-    draft_assignments = (
-        db.query(DailyAssignment)
-        .filter(
-            DailyAssignment.work_date == work_date,
-            DailyAssignment.assignment_status == AssignmentStatus.DRAFT.value,
-        )
-        .all()
+    draft_assignments = assignment_repository.list_draft_assignments_for_publish(
+        db=db,
+        work_date=work_date,
     )
     if not draft_assignments:
-        raise ValueError("No draft assignments found for this date.")
+        raise DomainError("No draft assignments found for this date.")
 
     try:
         publish_time = datetime.now(timezone.utc)
@@ -350,31 +302,18 @@ def publish_assignments(db: Session, work_date: date, manager_user_id: int) -> i
 
 
 def get_work_date_operational_snapshot(db: Session, work_date: date) -> dict:
-    assignment_count = (
-        db.query(DailyAssignment)
-        .filter(DailyAssignment.work_date == work_date)
-        .count()
+    assignment_count = assignment_repository.count_assignments_for_date(db=db, work_date=work_date)
+    non_draft_count = assignment_repository.count_non_draft_assignments_for_date(
+        db=db,
+        work_date=work_date,
     )
-    non_draft_count = (
-        db.query(DailyAssignment)
-        .filter(
-            DailyAssignment.work_date == work_date,
-            DailyAssignment.assignment_status != AssignmentStatus.DRAFT.value,
-        )
-        .count()
+    visit_count = assignment_repository.count_visits_linked_to_assignment_date(
+        db=db,
+        work_date=work_date,
     )
-    visit_count = (
-        db.query(Visit)
-        .join(DailyAssignment, DailyAssignment.id == Visit.assignment_id)
-        .filter(DailyAssignment.work_date == work_date)
-        .count()
-    )
-    followup_count = (
-        db.query(TelesalesFollowup)
-        .join(Visit, Visit.id == TelesalesFollowup.visit_id)
-        .join(DailyAssignment, DailyAssignment.id == Visit.assignment_id)
-        .filter(DailyAssignment.work_date == work_date)
-        .count()
+    followup_count = assignment_repository.count_followups_linked_to_assignment_date(
+        db=db,
+        work_date=work_date,
     )
 
     return {
@@ -415,23 +354,13 @@ def _rebuild_store_schedule_state_from_history(
 
     events: list[tuple[date, int, str, str]] = []
 
-    visit_rows = (
-        db.query(Visit.visit_date, Visit.result)
-        .filter(Visit.store_id == store_id)
-        .order_by(Visit.visit_date, Visit.id)
-        .all()
-    )
+    visit_rows = visit_repository.list_visit_events_for_store(db=db, store_id=store_id)
     for visit_date, result in visit_rows:
         events.append((visit_date, 0, "visit", result))
 
-    followup_rows = (
-        db.query(TelesalesFollowup.followup_date, TelesalesFollowup.result)
-        .filter(
-            TelesalesFollowup.store_id == store_id,
-            TelesalesFollowup.result.is_not(None),
-        )
-        .order_by(TelesalesFollowup.followup_date, TelesalesFollowup.id)
-        .all()
+    followup_rows = telesales_followup_repository.list_finalized_followup_events_for_store(
+        db=db,
+        store_id=store_id,
     )
     for followup_date, result in followup_rows:
         events.append((followup_date, 1, "followup", result))
@@ -460,45 +389,31 @@ def _rebuild_store_schedule_state_from_history(
 def flush_work_date_operational_data(db: Session, work_date: date, manager_user_id: int) -> dict:
     _assert_manager_user(db, manager_user_id)
 
-    assignment_rows = (
-        db.query(DailyAssignment.id, DailyAssignment.store_id)
-        .filter(DailyAssignment.work_date == work_date)
-        .all()
+    assignment_rows = assignment_repository.list_assignment_ids_and_store_ids_for_date(
+        db=db,
+        work_date=work_date,
     )
     assignment_ids = [int(assignment_id) for assignment_id, _ in assignment_rows]
     affected_store_ids = {int(store_id) for _, store_id in assignment_rows}
 
-    visit_ids: list[int] = []
-    if assignment_ids:
-        visit_ids = [
-            int(visit_id)
-            for (visit_id,) in (
-                db.query(Visit.id)
-                .filter(Visit.assignment_id.in_(assignment_ids))
-                .all()
-            )
-        ]
+    visit_ids = visit_repository.list_visit_ids_by_assignment_ids(
+        db=db,
+        assignment_ids=assignment_ids,
+    )
 
-    followup_deleted = 0
-    if visit_ids:
-        followup_deleted = (
-            db.query(TelesalesFollowup)
-            .filter(TelesalesFollowup.visit_id.in_(visit_ids))
-            .delete(synchronize_session=False)
-        )
+    followup_deleted = telesales_followup_repository.delete_followups_by_visit_ids(
+        db=db,
+        visit_ids=visit_ids,
+    )
 
-    visits_deleted = 0
-    if assignment_ids:
-        visits_deleted = (
-            db.query(Visit)
-            .filter(Visit.assignment_id.in_(assignment_ids))
-            .delete(synchronize_session=False)
-        )
+    visits_deleted = visit_repository.delete_visits_by_assignment_ids(
+        db=db,
+        assignment_ids=assignment_ids,
+    )
 
-    assignments_deleted = (
-        db.query(DailyAssignment)
-        .filter(DailyAssignment.work_date == work_date)
-        .delete(synchronize_session=False)
+    assignments_deleted = assignment_repository.delete_assignments_for_date(
+        db=db,
+        work_date=work_date,
     )
 
     try:

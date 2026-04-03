@@ -1,16 +1,14 @@
+from __future__ import annotations
+
 from server.app.services.import_users_service import import_users_from_excel
 from server.db.database import get_db_session
 
 
-def main():
+def test_import_users_seed_file() -> None:
     db = get_db_session()
     try:
-        file_path = "data/users_seed_sample_10_visitors.xlsx"
-        processed_count = import_users_from_excel(file_path, db)
-        print(f"{processed_count} user rows processed successfully.")
+        processed_count = import_users_from_excel("data/users_seed_sample_10_visitors.xlsx", db)
     finally:
         db.close()
 
-
-if __name__ == "__main__":
-    main()
+    assert processed_count >= 1

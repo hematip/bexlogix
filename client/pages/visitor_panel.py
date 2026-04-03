@@ -6,11 +6,10 @@ import streamlit as st
 
 from client.components.jalali_date import jalali_date_input
 from client.components.route_map import render_route_map
-from client.styles.neumorphism import neu_metric, neu_section_header, status_badge
+from client.styles.neumorphism import neu_metric, neu_section_header, render_page_title, status_badge
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.visit_result import VisitResult
-from server.app.models.visitor_profile import VisitorProfile
-from server.app.services import reporting_export_service, visit_service
+from server.app.services import dashboard_query_service, reporting_export_service, visit_service
 from server.db.database import get_db_session
 
 
@@ -36,10 +35,10 @@ def _normalized_note(value: object) -> str:
     return text
 
 
-def _get_visitor_profile(user_id: int) -> VisitorProfile | None:
+def _get_visitor_profile(user_id: int):
     db = get_db_session()
     try:
-        return db.query(VisitorProfile).filter(VisitorProfile.user_id == user_id).first()
+        return dashboard_query_service.get_visitor_profile_for_user(db=db, user_id=user_id)
     finally:
         db.close()
 
@@ -47,43 +46,17 @@ def _get_visitor_profile(user_id: int) -> VisitorProfile | None:
 def _load_assignments(visitor_id: int, work_date: date) -> pd.DataFrame:
     db = get_db_session()
     try:
-        query = """
-        SELECT
-            a.id AS assignment_id,
-            a.work_date,
-            s.store_code,
-            s.store_name,
-            s.address,
-            s.lat,
-            s.lon,
-            a.route_order,
-            a.route_distance_km,
-            a.assignment_status,
-            COALESCE(dvs.start_lat, vp.default_start_lat) AS start_lat,
-            COALESCE(dvs.start_lon, vp.default_start_lon) AS start_lon,
-            vi.id AS visit_id,
-            vi.result AS visit_result,
-            vi.note AS visit_note
-        FROM daily_assignments a
-        JOIN visitor_profiles vp ON vp.id = a.visitor_id
-        JOIN stores s ON s.id = a.store_id
-        LEFT JOIN daily_visitor_statuses dvs
-            ON dvs.visitor_id = a.visitor_id AND dvs.work_date = a.work_date
-        LEFT JOIN visits vi ON vi.assignment_id = a.id
-        WHERE a.visitor_id = :vid AND a.work_date = :wd
-        ORDER BY a.route_order IS NULL, a.route_order, s.store_code
-        """
-        return pd.read_sql_query(
-            query,
-            db.bind,
-            params={"vid": visitor_id, "wd": work_date.isoformat()},
+        return dashboard_query_service.load_visitor_assignments_df(
+            db=db,
+            work_date=work_date,
+            visitor_id=visitor_id,
         )
     finally:
         db.close()
 
 
 def render_visitor_panel(current_user: dict) -> None:
-    st.markdown('<div class="page-title">مسیر من</div>', unsafe_allow_html=True)
+    render_page_title("مسیر من")
 
     profile = _get_visitor_profile(current_user["id"])
     if not profile:

@@ -1,3 +1,5 @@
+import pytest
+
 from server.app.services import routing_service
 
 
@@ -9,6 +11,7 @@ def _build_sample_stops() -> list[dict]:
     ]
 
 
+@pytest.mark.unit
 def test_osrm_success() -> None:
     planner = routing_service.OSRMRoutePlanner(
         base_url="https://mock.osrm.local",
@@ -53,6 +56,7 @@ def test_osrm_success() -> None:
     assert by_assignment[103].route_distance_km == 3.5
 
 
+@pytest.mark.unit
 def test_osrm_fallback() -> None:
     planner = routing_service.OSRMRoutePlanner(
         base_url="https://mock.osrm.local",
@@ -76,10 +80,12 @@ def test_osrm_fallback() -> None:
     assert all(item.route_distance_km is not None for item in planned)
 
 
+@pytest.mark.unit
 def test_route_geometry_success() -> None:
     original_request = routing_service._request_osrm_payload
 
-    def fake_request(_: str, __: float) -> dict:
+    def fake_request(url: str, timeout_seconds: float) -> dict:
+        del url, timeout_seconds
         return {
             "code": "Ok",
             "routes": [
@@ -109,10 +115,12 @@ def test_route_geometry_success() -> None:
     assert geometry == [[51.39, 35.69], [51.395, 35.695], [51.401, 35.701]]
 
 
+@pytest.mark.unit
 def test_route_geometry_failure_returns_empty() -> None:
     original_request = routing_service._request_osrm_payload
 
-    def fake_raise(_: str, __: float) -> dict:
+    def fake_raise(url: str, timeout_seconds: float) -> dict:
+        del url, timeout_seconds
         raise TimeoutError("Simulated timeout")
 
     try:
@@ -127,15 +135,3 @@ def test_route_geometry_failure_returns_empty() -> None:
         routing_service._request_osrm_payload = original_request  # type: ignore[assignment]
 
     assert geometry == []
-
-
-def main() -> None:
-    test_osrm_success()
-    test_osrm_fallback()
-    test_route_geometry_success()
-    test_route_geometry_failure_returns_empty()
-    print("OSRM routing tests passed.")
-
-
-if __name__ == "__main__":
-    main()

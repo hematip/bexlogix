@@ -6,10 +6,8 @@ import streamlit as st
 
 from client.components.jalali_date import jalali_date_input
 from client.components.route_map import render_route_map
-from client.styles.neumorphism import neu_card, neu_metric, neu_section_header
-from server.app.models.daily_assignment import DailyAssignment
-from server.app.models.visitor_profile import VisitorProfile
-from server.app.services import reporting_export_service, telesales_service
+from client.styles.neumorphism import neu_card, neu_metric, neu_section_header, render_page_title
+from server.app.services import dashboard_query_service, reporting_export_service, telesales_service
 from server.db.database import get_db_session
 
 _ALL_VISITORS_OPTION = "— همه ویزیتورها —"
@@ -18,24 +16,7 @@ _ALL_VISITORS_OPTION = "— همه ویزیتورها —"
 def _load_assignments(work_date: date) -> pd.DataFrame:
     db = get_db_session()
     try:
-        query = """
-        SELECT
-            a.work_date,
-            v.visitor_code,
-            s.store_code,
-            s.store_name,
-            a.route_order,
-            a.route_distance_km,
-            a.assignment_status,
-            vi.result AS visit_result
-        FROM daily_assignments a
-        JOIN visitor_profiles v ON v.id = a.visitor_id
-        JOIN stores s ON s.id = a.store_id
-        LEFT JOIN visits vi ON vi.assignment_id = a.id
-        WHERE a.work_date = :wd
-        ORDER BY v.visitor_code, a.route_order IS NULL, a.route_order, s.store_code
-        """
-        return pd.read_sql_query(query, db.bind, params={"wd": work_date.isoformat()})
+        return dashboard_query_service.load_supervisor_assignments_df(db=db, work_date=work_date)
     finally:
         db.close()
 
@@ -43,21 +24,7 @@ def _load_assignments(work_date: date) -> pd.DataFrame:
 def _load_visits(work_date: date) -> pd.DataFrame:
     db = get_db_session()
     try:
-        query = """
-        SELECT
-            vi.id AS visit_id,
-            vi.visit_date,
-            vp.visitor_code,
-            s.store_code,
-            vi.result,
-            vi.note
-        FROM visits vi
-        JOIN visitor_profiles vp ON vp.id = vi.visitor_id
-        JOIN stores s ON s.id = vi.store_id
-        WHERE vi.visit_date = :wd
-        ORDER BY vp.visitor_code, s.store_code
-        """
-        return pd.read_sql_query(query, db.bind, params={"wd": work_date.isoformat()})
+        return dashboard_query_service.load_supervisor_visits_df(db=db, work_date=work_date)
     finally:
         db.close()
 
@@ -65,31 +32,10 @@ def _load_visits(work_date: date) -> pd.DataFrame:
 def _load_route_map_data(work_date: date, visitor_id: int) -> pd.DataFrame:
     db = get_db_session()
     try:
-        query = """
-        SELECT
-            a.id AS assignment_id,
-            a.work_date,
-            v.visitor_code,
-            s.store_code,
-            s.store_name,
-            s.lat,
-            s.lon,
-            a.route_order,
-            a.assignment_status,
-            COALESCE(dvs.start_lat, v.default_start_lat) AS start_lat,
-            COALESCE(dvs.start_lon, v.default_start_lon) AS start_lon
-        FROM daily_assignments a
-        JOIN visitor_profiles v ON v.id = a.visitor_id
-        JOIN stores s ON s.id = a.store_id
-        LEFT JOIN daily_visitor_statuses dvs
-            ON dvs.visitor_id = a.visitor_id AND dvs.work_date = a.work_date
-        WHERE a.work_date = :wd AND a.visitor_id = :vid
-        ORDER BY a.route_order IS NULL, a.route_order, s.store_code
-        """
-        return pd.read_sql_query(
-            query,
-            db.bind,
-            params={"wd": work_date.isoformat(), "vid": visitor_id},
+        return dashboard_query_service.load_route_map_df(
+            db=db,
+            work_date=work_date,
+            visitor_id=visitor_id,
         )
     finally:
         db.close()
@@ -98,15 +44,7 @@ def _load_route_map_data(work_date: date, visitor_id: int) -> pd.DataFrame:
 def _get_visitor_options(work_date: date) -> dict[str, int]:
     db = get_db_session()
     try:
-        rows = (
-            db.query(VisitorProfile.id, VisitorProfile.visitor_code)
-            .join(DailyAssignment, DailyAssignment.visitor_id == VisitorProfile.id)
-            .filter(DailyAssignment.work_date == work_date)
-            .distinct()
-            .order_by(VisitorProfile.visitor_code)
-            .all()
-        )
-        return {code: visitor_id for visitor_id, code in rows}
+        return dashboard_query_service.get_visitor_options(db=db, work_date=work_date)
     finally:
         db.close()
 
@@ -135,7 +73,7 @@ def _export_all_routes(work_date: date, visitor_options: dict[str, int]) -> Byte
 def render_supervisor_dashboard(current_user: dict) -> None:
     del current_user
 
-    st.markdown('<div class="page-title">داشبورد سرپرست</div>', unsafe_allow_html=True)
+    render_page_title("داشبورد سرپرست")
 
     neu_card(
         '<span style="font-weight:600;color:#1e40af;">👁️‍🗨️ حالت نظارتی - فقط مشاهده</span>',

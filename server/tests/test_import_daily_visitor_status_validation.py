@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import os
 from tempfile import NamedTemporaryFile
 
 import pandas as pd
+import pytest
 
 from server.app.services.import_daily_visitor_status_service import (
     import_daily_visitor_statuses_from_excel,
@@ -10,7 +13,7 @@ from server.app.services.import_users_service import import_users_from_excel
 from server.db.database import get_db_session
 
 
-def _run_case(df: pd.DataFrame, expected_message_part: str, title: str) -> None:
+def _run_case(df: pd.DataFrame, expected_message_part: str) -> None:
     temp_path = None
     db = get_db_session()
     try:
@@ -18,31 +21,17 @@ def _run_case(df: pd.DataFrame, expected_message_part: str, title: str) -> None:
             temp_path = tmp.name
         df.to_excel(temp_path, index=False)
 
-        try:
+        with pytest.raises(ValueError) as exc_info:
             import_daily_visitor_statuses_from_excel(temp_path, db)
-        except ValueError as exc:
-            if expected_message_part not in str(exc):
-                raise AssertionError(
-                    f"{title}: expected message containing '{expected_message_part}', got '{exc}'"
-                ) from exc
-            print(f"{title}: OK")
-            return
-
-        raise AssertionError(f"{title}: expected ValueError but import succeeded.")
+        assert expected_message_part in str(exc_info.value)
     finally:
         db.close()
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
 
-def main() -> None:
-    db = get_db_session()
-    try:
-        import_users_from_excel("data/users_seed_sample_10_visitors.xlsx", db)
-    finally:
-        db.close()
-
-    base_df = pd.DataFrame(
+def _base_df() -> pd.DataFrame:
+    return pd.DataFrame(
         [
             {
                 "work_date": "2026-04-01",
@@ -57,79 +46,74 @@ def main() -> None:
         ]
     )
 
-    missing_column_df = base_df.drop(columns=["capacity"])
-    _run_case(missing_column_df, "Missing required columns", "missing required column")
 
-    invalid_date_df = base_df.copy()
-    invalid_date_df.loc[0, "work_date"] = "not-a-date"
-    _run_case(invalid_date_df, "work_date is invalid", "invalid date format")
+@pytest.mark.service
+def test_import_daily_visitor_status_validation_cases() -> None:
+    db = get_db_session()
+    try:
+        import_users_from_excel("data/users_seed_sample_10_visitors.xlsx", db)
+    finally:
+        db.close()
 
-    unknown_username_df = base_df.copy()
-    unknown_username_df.loc[0, "username"] = "visitor999"
-    _run_case(unknown_username_df, "Unknown usernames in users table", "unknown username")
-
-    invalid_role_df = base_df.copy()
-    invalid_role_df.loc[0, "username"] = "manager1"
-    _run_case(invalid_role_df, "Daily status only accepts users with role='visitor'", "invalid role")
-
-    negative_capacity_df = base_df.copy()
-    negative_capacity_df.loc[0, "capacity"] = -1
-    _run_case(negative_capacity_df, "capacity cannot be negative", "negative capacity")
-
-    non_integer_capacity_df = base_df.copy()
-    non_integer_capacity_df.loc[0, "capacity"] = 10.5
-    _run_case(non_integer_capacity_df, "capacity must be an integer value", "non-integer capacity")
-
-    half_missing_coordinate_df = base_df.copy()
-    half_missing_coordinate_df.loc[0, "start_lon"] = None
-    _run_case(
-        half_missing_coordinate_df,
-        "start_lat and start_lon must both be present or both be empty",
-        "half-missing coordinate pair",
-    )
-
-    full_missing_coordinate_df = base_df.copy()
-    full_missing_coordinate_df.loc[0, "start_lat"] = None
-    full_missing_coordinate_df.loc[0, "start_lon"] = None
-    _run_case(
-        full_missing_coordinate_df,
-        "start_lat and start_lon are required for daily routing",
-        "missing coordinate pair",
-    )
-
-    duplicate_pair_df = pd.concat([base_df, base_df], ignore_index=True)
-    _run_case(
-        duplicate_pair_df,
-        "duplicate (username, visitor_code, work_date)",
-        "duplicate username/visitor/date rows",
-    )
-
-    username_multi_codes_df = pd.concat(
-        [
-            base_df,
-            pd.DataFrame(
+    base_df = _base_df()
+    cases: list[tuple[pd.DataFrame, str]] = [
+        (base_df.drop(columns=["capacity"]), "Missing required columns"),
+        (
+            base_df.assign(work_date="not-a-date"),
+            "work_date is invalid",
+        ),
+        (
+            base_df.assign(username="visitor999"),
+            "Unknown usernames in users table",
+        ),
+        (
+            base_df.assign(username="manager1"),
+            "Daily status only accepts users with role='visitor'",
+        ),
+        (
+            base_df.assign(capacity=-1),
+            "capacity cannot be negative",
+        ),
+        (
+            base_df.assign(capacity=10.5),
+            "capacity must be an integer value",
+        ),
+        (
+            base_df.assign(start_lon=None),
+            "start_lat and start_lon must both be present or both be empty",
+        ),
+        (
+            base_df.assign(start_lat=None, start_lon=None),
+            "start_lat and start_lon are required for daily routing",
+        ),
+        (
+            pd.concat([base_df, base_df], ignore_index=True),
+            "duplicate (username, visitor_code, work_date)",
+        ),
+        (
+            pd.concat(
                 [
-                    {
-                        "work_date": "2026-04-01",
-                        "username": "visitor1",
-                        "visitor_code": "VIS-999",
-                        "full_name": "ویزیتور تست",
-                        "start_lat": 35.71,
-                        "start_lon": 51.41,
-                        "capacity": 20,
-                        "is_active_today": True,
-                    }
-                ]
+                    base_df,
+                    pd.DataFrame(
+                        [
+                            {
+                                "work_date": "2026-04-01",
+                                "username": "visitor1",
+                                "visitor_code": "VIS-999",
+                                "full_name": "ویزیتور تست",
+                                "start_lat": 35.71,
+                                "start_lon": 51.41,
+                                "capacity": 20,
+                                "is_active_today": True,
+                            }
+                        ]
+                    ),
+                ],
+                ignore_index=True,
             ),
-        ],
-        ignore_index=True,
-    )
-    _run_case(
-        username_multi_codes_df,
-        "is mapped to multiple visitor_code values in file",
-        "username mapped to multiple visitor codes",
-    )
+            "is mapped to multiple visitor_code values in file",
+        ),
+    ]
 
-
-if __name__ == "__main__":
-    main()
+    for frame, expected_error in cases:
+        _run_case(frame, expected_error)

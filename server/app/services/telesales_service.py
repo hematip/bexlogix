@@ -6,21 +6,23 @@ from server.app.enums.contact_status import ContactStatus
 from server.app.enums.roles import UserRole
 from server.app.enums.telesales_outcome import TelesalesOutcome
 from server.app.enums.visit_result import VisitResult
-from server.app.models.store import Store
+from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError
 from server.app.models.telesales_followup import TelesalesFollowup
-from server.app.models.user import User
-from server.app.models.visit import Visit
-from server.app.models.visitor_profile import VisitorProfile
+from server.app.repositories import (
+    telesales_followup_repository,
+    user_repository,
+    visit_repository,
+)
 from server.app.services import scheduling_service
 from server.app.services.constants import TELESALES_POSTPONE_DELAY_DAYS
 
 
 def _assert_telesales_user(db: Session, user_id: int) -> None:
-    user = db.query(User).filter(User.id == user_id).first()
+    user = user_repository.get_user_by_id(db, user_id)
     if not user:
-        raise ValueError(f"User id {user_id} not found.")
+        raise ValidationError(f"User id {user_id} not found.")
     if user.role != UserRole.TELESALES.value:
-        raise ValueError("Only telesales users can submit follow-up results.")
+        raise AppPermissionError("Only telesales users can submit follow-up results.")
 
 
 def create_followup_for_red_visit(
@@ -29,20 +31,13 @@ def create_followup_for_red_visit(
     created_by_user_id: int | None,
     commit: bool = True,
 ) -> TelesalesFollowup:
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    visit = visit_repository.get_visit_by_id(db, visit_id)
     if not visit:
-        raise ValueError(f"Visit id {visit_id} not found.")
+        raise ValidationError(f"Visit id {visit_id} not found.")
     if visit.result != VisitResult.RED.value:
-        raise ValueError("Telesales follow-up can only be created for red visits.")
+        raise DomainError("Telesales follow-up can only be created for red visits.")
 
-    existing_open = (
-        db.query(TelesalesFollowup)
-        .filter(
-            TelesalesFollowup.visit_id == visit_id,
-            TelesalesFollowup.result.is_(None),
-        )
-        .first()
-    )
+    existing_open = telesales_followup_repository.get_open_followup_by_visit_id(db, visit_id)
     if existing_open:
         return existing_open
 
@@ -65,18 +60,9 @@ def create_followup_for_red_visit(
 
 
 def list_pending_followups(db: Session, as_of_date: date | None = None) -> list[dict]:
-    query = (
-        db.query(TelesalesFollowup, Store, Visit, VisitorProfile)
-        .join(Store, Store.id == TelesalesFollowup.store_id)
-        .join(Visit, Visit.id == TelesalesFollowup.visit_id)
-        .outerjoin(VisitorProfile, VisitorProfile.id == Visit.visitor_id)
-        .filter(TelesalesFollowup.result.is_(None))
-    )
-    if as_of_date is not None:
-        query = query.filter(TelesalesFollowup.followup_date <= as_of_date)
+    rows = telesales_followup_repository.list_pending_followup_rows(db=db, as_of_date=as_of_date)
 
-    rows = query.order_by(TelesalesFollowup.followup_date, Store.store_code).all()
-    pending = []
+    pending: list[dict] = []
     for followup, store, visit, visitor in rows:
         pending.append(
             {
@@ -122,15 +108,15 @@ def submit_followup_result(
     allowed_results = {item.value for item in TelesalesOutcome}
 
     if normalized_contact_status not in allowed_contact_statuses:
-        raise ValueError(f"Invalid contact_status: {contact_status}")
+        raise ValidationError(f"Invalid contact_status: {contact_status}")
     if normalized_result not in allowed_results:
-        raise ValueError(f"Invalid telesales result: {result}")
+        raise ValidationError(f"Invalid telesales result: {result}")
 
-    followup = db.query(TelesalesFollowup).filter(TelesalesFollowup.id == followup_id).first()
+    followup = telesales_followup_repository.get_followup_by_id(db, followup_id)
     if not followup:
-        raise ValueError(f"Telesales followup id {followup_id} not found.")
+        raise ValidationError(f"Telesales followup id {followup_id} not found.")
     if followup.result is not None:
-        raise ValueError("This follow-up is already finalized.")
+        raise DomainError("This follow-up is already finalized.")
 
     try:
         followup.contact_status = normalized_contact_status

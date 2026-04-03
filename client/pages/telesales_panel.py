@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from client.components.jalali_date import jalali_date_input
-from client.styles.neumorphism import neu_metric, neu_section_header
+from client.styles.neumorphism import neu_metric, neu_section_header, render_page_title
 from server.app.enums.contact_status import ContactStatus
 from server.app.enums.telesales_outcome import TelesalesOutcome
 from server.app.services import telesales_service
@@ -29,7 +29,7 @@ def _safe_text(value: str | None) -> str:
 
 
 def render_telesales_panel(current_user: dict) -> None:
-    st.markdown('<div class="page-title">پنل فروش تلفنی</div>', unsafe_allow_html=True)
+    render_page_title("پنل فروش تلفنی")
 
     as_of_date = jalali_date_input(
         label="📅 نمایش موارد تا تاریخ",

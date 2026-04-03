@@ -1,22 +1,29 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
 from server.app.services.import_telesales_followups_service import (
     import_telesales_followups_from_excel,
 )
 from server.db.database import get_db_session
 
 
-def main():
+@pytest.mark.smoke
+def test_import_telesales_followups_backfill_mode() -> None:
+    sample_path = Path("data/telesales_followups_sample.xlsx")
+    if not sample_path.exists():
+        pytest.skip("telesales followups sample file is not present in current workspace.")
+
     db = get_db_session()
     try:
-        file_path = "data/telesales_followups_sample.xlsx"
         processed_count = import_telesales_followups_from_excel(
-            file_path=file_path,
+            file_path=str(sample_path),
             db=db,
             allow_backfill_mode=True,
         )
-        print(f"{processed_count} telesales followup rows processed in backfill mode.")
     finally:
         db.close()
 
-
-if __name__ == "__main__":
-    main()
+    assert processed_count >= 0

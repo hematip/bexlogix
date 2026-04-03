@@ -10,11 +10,8 @@ from urllib.request import urlopen
 from sqlalchemy.orm import Session
 
 from server.app import config
-from server.app.enums.assignment_status import AssignmentStatus
-from server.app.models.daily_assignment import DailyAssignment
-from server.app.models.daily_visitor_status import DailyVisitorStatus
-from server.app.models.store import Store
-from server.app.models.visitor_profile import VisitorProfile
+from server.app.errors import DomainError
+from server.app.repositories import assignment_repository, visitor_repository
 
 
 @dataclass
@@ -291,24 +288,11 @@ def fetch_osrm_route_geometry(
 
 
 def _get_start_point(db: Session, work_date: date, visitor_id: int) -> tuple[float | None, float | None]:
-    daily_row = (
-        db.query(DailyVisitorStatus)
-        .filter(
-            DailyVisitorStatus.visitor_id == visitor_id,
-            DailyVisitorStatus.work_date == work_date,
-        )
-        .first()
+    return visitor_repository.get_start_point_for_date(
+        db=db,
+        work_date=work_date,
+        visitor_id=visitor_id,
     )
-    if daily_row and daily_row.start_lat is not None and daily_row.start_lon is not None:
-        return float(daily_row.start_lat), float(daily_row.start_lon)
-
-    profile = db.query(VisitorProfile).filter(VisitorProfile.id == visitor_id).first()
-    if not profile:
-        return None, None
-    if profile.default_start_lat is None or profile.default_start_lon is None:
-        return None, None
-
-    return float(profile.default_start_lat), float(profile.default_start_lon)
 
 
 def apply_route_order_for_visitor(
@@ -317,29 +301,20 @@ def apply_route_order_for_visitor(
     visitor_id: int,
     planner: RoutePlanner,
 ) -> int:
-    published_exists = (
-        db.query(DailyAssignment)
-        .filter(
-            DailyAssignment.work_date == work_date,
-            DailyAssignment.visitor_id == visitor_id,
-            DailyAssignment.assignment_status == AssignmentStatus.PUBLISHED.value,
-        )
-        .count()
+    published_exists = assignment_repository.count_published_assignments_for_visitor_date(
+        db=db,
+        work_date=work_date,
+        visitor_id=visitor_id,
     )
     if published_exists > 0:
-        raise ValueError(
+        raise DomainError(
             "Published assignments detected. MVP policy blocks route regeneration after publish."
         )
 
-    assignments = (
-        db.query(DailyAssignment, Store)
-        .join(Store, Store.id == DailyAssignment.store_id)
-        .filter(
-            DailyAssignment.work_date == work_date,
-            DailyAssignment.visitor_id == visitor_id,
-            DailyAssignment.assignment_status == AssignmentStatus.DRAFT.value,
-        )
-        .all()
+    assignments = assignment_repository.list_draft_assignments_with_store_for_visitor_date(
+        db=db,
+        work_date=work_date,
+        visitor_id=visitor_id,
     )
     if not assignments:
         return 0
@@ -374,16 +349,10 @@ def apply_route_order_for_visitor(
 
 
 def apply_routes_for_work_date(db: Session, work_date: date, planner: RoutePlanner) -> int:
-    visitor_rows = (
-        db.query(DailyAssignment.visitor_id)
-        .filter(
-            DailyAssignment.work_date == work_date,
-            DailyAssignment.assignment_status == AssignmentStatus.DRAFT.value,
-        )
-        .distinct()
-        .all()
+    visitor_ids = assignment_repository.list_visitor_ids_with_draft_assignments(
+        db=db,
+        work_date=work_date,
     )
-    visitor_ids = [visitor_id for (visitor_id,) in visitor_rows]
 
     processed_count = 0
     for visitor_id in visitor_ids:

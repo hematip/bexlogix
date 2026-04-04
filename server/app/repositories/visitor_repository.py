@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -11,14 +14,17 @@ from server.app.models.user import User
 from server.app.models.visitor_profile import VisitorProfile
 
 
+# Contract: get_profile_by_id executes one deterministic step in the workflow.
 def get_profile_by_id(db: Session, visitor_id: int) -> VisitorProfile | None:
     return db.query(VisitorProfile).filter(VisitorProfile.id == visitor_id).first()
 
 
+# Contract: get_profile_by_user_id executes one deterministic step in the workflow.
 def get_profile_by_user_id(db: Session, user_id: int) -> VisitorProfile | None:
     return db.query(VisitorProfile).filter(VisitorProfile.user_id == user_id).first()
 
 
+# Contract: list_visitor_code_rows_for_date executes one deterministic step in the workflow.
 def list_visitor_code_rows_for_date(db: Session, work_date: date) -> list[tuple[int, str]]:
     return (
         db.query(VisitorProfile.id, VisitorProfile.visitor_code)
@@ -30,6 +36,7 @@ def list_visitor_code_rows_for_date(db: Session, work_date: date) -> list[tuple[
     )
 
 
+# Contract: list_active_day_context_rows executes one deterministic step in the workflow.
 def list_active_day_context_rows(db: Session, work_date: date) -> list[tuple]:
     return (
         db.query(
@@ -56,6 +63,7 @@ def list_active_day_context_rows(db: Session, work_date: date) -> list[tuple]:
     )
 
 
+# Contract: get_start_point_for_date executes one deterministic step in the workflow.
 def get_start_point_for_date(
     db: Session,
     work_date: date,
@@ -80,6 +88,7 @@ def get_start_point_for_date(
     return float(profile.default_start_lat), float(profile.default_start_lon)
 
 
+# Contract: count_daily_status_rows_for_date executes one deterministic step in the workflow.
 def count_daily_status_rows_for_date(db: Session, work_date: date) -> int:
     return (
         db.query(DailyVisitorStatus)

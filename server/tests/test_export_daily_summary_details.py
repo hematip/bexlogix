@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from io import BytesIO
@@ -18,6 +21,7 @@ EXPECTED_SHEETS = [
 ]
 
 
+# Contract: _assert_columns executes one deterministic step in the workflow.
 def _assert_columns(df: pd.DataFrame, required_columns: list[str], sheet_name: str) -> None:
     missing_columns = [column for column in required_columns if column not in df.columns]
     assert not missing_columns, (
@@ -25,6 +29,7 @@ def _assert_columns(df: pd.DataFrame, required_columns: list[str], sheet_name: s
     )
 
 
+# Contract: test_daily_summary_detailed_export_contract executes one deterministic step in the workflow.
 @pytest.mark.integration
 def test_daily_summary_detailed_export_contract() -> None:
     db = get_db_session()

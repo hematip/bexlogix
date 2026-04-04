@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 import sys

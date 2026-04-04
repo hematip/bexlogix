@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date, datetime, timezone
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String
@@ -6,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from server.db.base import Base
 
 # Current scheduling state of each store
+# Contract: StoreScheduleState defines a typed boundary and should remain behavior-stable.
 class StoreScheduleState(Base):
     __tablename__ = 'store_schedule_states'
 

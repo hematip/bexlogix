@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 import ast
@@ -13,10 +16,12 @@ MAX_REPOSITORY_FUNCTION_LENGTH = 120
 MAX_SERVICE_FILE_LENGTH = 700
 
 
+# Contract: _iter_python_files executes one deterministic step in the workflow.
 def _iter_python_files(directory: Path) -> list[Path]:
     return sorted(path for path in directory.rglob("*.py") if path.is_file())
 
 
+# Contract: _function_length executes one deterministic step in the workflow.
 def _function_length(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     end_lineno = getattr(node, "end_lineno", None)
     if end_lineno is None:
@@ -24,9 +29,10 @@ def _function_length(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     return int(end_lineno) - int(node.lineno) + 1
 
 
+# Contract: _check_no_direct_queries_in_pages executes one deterministic step in the workflow.
 def _check_no_direct_queries_in_pages() -> list[str]:
     violations: list[str] = []
-    patterns = ("db.query(", "read_sql_query(")
+    patterns = ("db.query(", "read_sql_query(", "db.bind")
     for path in _iter_python_files(PAGES_DIR):
         text = path.read_text(encoding="utf-8")
         for pattern in patterns:
@@ -37,6 +43,7 @@ def _check_no_direct_queries_in_pages() -> list[str]:
     return violations
 
 
+# Contract: _check_repository_boundaries executes one deterministic step in the workflow.
 def _check_repository_boundaries() -> list[str]:
     violations: list[str] = []
     for path in _iter_python_files(REPOSITORIES_DIR):
@@ -60,6 +67,7 @@ def _check_repository_boundaries() -> list[str]:
     return violations
 
 
+# Contract: _check_service_file_lengths executes one deterministic step in the workflow.
 def _check_service_file_lengths() -> list[str]:
     violations: list[str] = []
     for path in _iter_python_files(SERVICES_DIR):
@@ -72,6 +80,7 @@ def _check_service_file_lengths() -> list[str]:
     return violations
 
 
+# Contract: run_quality_gate executes one deterministic step in the workflow.
 def run_quality_gate() -> list[str]:
     violations: list[str] = []
     violations.extend(_check_no_direct_queries_in_pages())
@@ -80,6 +89,7 @@ def run_quality_gate() -> list[str]:
     return violations
 
 
+# Contract: main executes one deterministic step in the workflow.
 def main() -> int:
     violations = run_quality_gate()
     if not violations:

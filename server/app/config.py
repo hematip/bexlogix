@@ -1,8 +1,12 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 import os
 
 
+# Contract: _to_float executes one deterministic step in the workflow.
 def _to_float(raw_value: str | None, default: float) -> float:
     if raw_value is None:
         return default

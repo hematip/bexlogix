@@ -1,8 +1,12 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 
+# Contract: import_legacy_visits_from_excel executes one deterministic step in the workflow.
 def import_legacy_visits_from_excel(
     file_path: str | Path,
     db: Session,
@@ -18,11 +22,9 @@ def import_legacy_visits_from_excel(
     _ = (file_path, db)
     if not allow_backfill_mode:
         raise ValueError(
-            "Legacy visits import is disabled in MVP. "
-            "Visits must be created through in-app submission."
+            "در نسخه فعلی، import ویزیت‌های قدیمی غیرفعال است و ثبت ویزیت باید داخل سامانه انجام شود."
         )
 
     raise NotImplementedError(
-        "Legacy visit migration format is not finalized yet. "
-        "Implement this only for one-time migration projects."
+        "فرمت مهاجرت ویزیت‌های قدیمی هنوز نهایی نشده است و فقط برای پروژه مهاجرت یک‌باره باید پیاده‌سازی شود."
     )

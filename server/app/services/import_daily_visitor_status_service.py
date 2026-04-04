@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -6,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from server.app.errors import err
 from server.app.enums.roles import UserRole
 from server.app.models.daily_visitor_status import DailyVisitorStatus
 from server.app.models.user import User
@@ -23,23 +27,27 @@ REQUIRED_DAILY_VISITOR_STATUS_COLUMNS = {
 }
 
 
+# Contract: read_daily_visitor_status_excel executes one deterministic step in the workflow.
 def read_daily_visitor_status_excel(file_path: str | Path) -> pd.DataFrame:
     return pd.read_excel(file_path)
 
 
+# Contract: normalize_column_names executes one deterministic step in the workflow.
 def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     normalized_df = df.copy()
     normalized_df.columns = [str(col).strip().lower() for col in normalized_df.columns]
     return normalized_df
 
 
+# Contract: validate_daily_visitor_status_columns executes one deterministic step in the workflow.
 def validate_daily_visitor_status_columns(df: pd.DataFrame) -> None:
     missing_columns = set(REQUIRED_DAILY_VISITOR_STATUS_COLUMNS) - set(df.columns)
     if missing_columns:
         missing_str = ", ".join(sorted(missing_columns))
-        raise ValueError(f"Missing required columns: {missing_str}")
+        raise ValueError(err("missing_required_columns", columns=missing_str))
 
 
+# Contract: normalize_bool_value executes one deterministic step in the workflow.
 def normalize_bool_value(value) -> bool:
     if pd.isna(value):
         return False
@@ -48,6 +56,7 @@ def normalize_bool_value(value) -> bool:
     return str(value).strip().lower() in {"true", "1", "t", "y", "yes"}
 
 
+# Contract: transform_daily_visitor_status_dataframe executes one deterministic step in the workflow.
 def transform_daily_visitor_status_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     transformed = df.copy()
     transformed["work_date"] = pd.to_datetime(transformed["work_date"], errors="coerce").dt.date
@@ -61,67 +70,69 @@ def transform_daily_visitor_status_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return transformed
 
 
+# Contract: _row_error_message executes one deterministic step in the workflow.
 def _row_error_message(row_index: int, message: str) -> str:
-    return f"Row {row_index + 2}: {message}"
+    return f"ردیف {row_index + 2}: {message}"
 
 
+# Contract: validate_daily_visitor_status_values executes one deterministic step in the workflow.
 def validate_daily_visitor_status_values(df: pd.DataFrame, db: Session) -> None:
     errors: list[str] = []
 
     for field in ["username", "visitor_code", "full_name"]:
         empty_rows = df[df[field] == ""]
         for idx in empty_rows.index:
-            errors.append(_row_error_message(idx, f"{field} cannot be empty."))
+            errors.append(_row_error_message(idx, f"ستون {field} نباید خالی باشد."))
 
     invalid_date_rows = df[df["work_date"].isna()]
     for idx in invalid_date_rows.index:
-        errors.append(_row_error_message(idx, "work_date is invalid or empty."))
+        errors.append(_row_error_message(idx, "تاریخ کار نامعتبر است یا خالی است."))
 
     invalid_capacity_rows = df[df["capacity_numeric"].isna()]
     for idx in invalid_capacity_rows.index:
-        errors.append(_row_error_message(idx, "capacity must be a valid integer number."))
+        errors.append(_row_error_message(idx, "ظرفیت باید عدد صحیح معتبر باشد."))
 
     non_integer_capacity_rows = df[
         (~df["capacity_numeric"].isna()) & ((df["capacity_numeric"] % 1) != 0)
     ]
     for idx in non_integer_capacity_rows.index:
-        errors.append(_row_error_message(idx, "capacity must be an integer value."))
+        errors.append(_row_error_message(idx, "ظرفیت باید عدد صحیح باشد."))
 
     negative_capacity_rows = df[(~df["capacity_numeric"].isna()) & (df["capacity_numeric"] < 0)]
     for idx in negative_capacity_rows.index:
-        errors.append(_row_error_message(idx, "capacity cannot be negative."))
+        errors.append(_row_error_message(idx, "ظرفیت نمی‌تواند منفی باشد."))
 
     half_missing_coordinates_rows = df[df["start_lat"].isna() ^ df["start_lon"].isna()]
     for idx in half_missing_coordinates_rows.index:
         errors.append(
             _row_error_message(
                 idx,
-                "start_lat and start_lon must both be present or both be empty.",
+                "مختصات شروع باید کامل باشد؛ هر دو ستون start_lat و start_lon را وارد کنید.",
             )
         )
 
     missing_coordinates_rows = df[df["start_lat"].isna() & df["start_lon"].isna()]
     for idx in missing_coordinates_rows.index:
         errors.append(
-            _row_error_message(idx, "start_lat and start_lon are required for daily routing.")
+            _row_error_message(idx, "مختصات شروع برای مسیر روزانه الزامی است.")
         )
 
     duplicate_rows = df[df.duplicated(subset=["username", "visitor_code", "work_date"], keep=False)]
     for idx in duplicate_rows.index:
-        errors.append(_row_error_message(idx, "duplicate (username, visitor_code, work_date)."))
+        errors.append(_row_error_message(idx, "رکورد تکراری (username, visitor_code, work_date) وجود دارد."))
 
     for visitor_code, group in df.groupby("visitor_code"):
         usernames = set(group["username"])
         if len(usernames) > 1:
             errors.append(
-                f"visitor_code '{visitor_code}' is mapped to multiple usernames in file: {sorted(usernames)}"
+                f"کد ویزیتور «{visitor_code}» به چند نام کاربری نگاشت شده است: {sorted(usernames)}"
             )
 
     for username, group in df.groupby("username"):
         visitor_codes = set(group["visitor_code"])
         if len(visitor_codes) > 1:
             errors.append(
-                f"username '{username}' is mapped to multiple visitor_code values in file: {sorted(visitor_codes)}"
+                f"نام کاربری «{username}» به چند visitor_code نگاشت شده است: {sorted(visitor_codes)}"
             )
 
     usernames = set(df["username"].tolist())
@@ -134,7 +145,7 @@ def validate_daily_visitor_status_values(df: pd.DataFrame, db: Session) -> None:
 
     unknown_usernames = sorted(usernames - set(users_by_username.keys()))
     if unknown_usernames:
-        errors.append(f"Unknown usernames in users table: {', '.join(unknown_usernames)}")
+        errors.append(err("unknown_usernames", usernames=", ".join(unknown_usernames)))
 
     invalid_role_usernames = sorted(
         username
@@ -142,15 +153,13 @@ def validate_daily_visitor_status_values(df: pd.DataFrame, db: Session) -> None:
         if role != UserRole.VISITOR.value
     )
     if invalid_role_usernames:
-        errors.append(
-            "Daily status only accepts users with role='visitor'. Invalid usernames: "
-            + ", ".join(invalid_role_usernames)
-        )
+        errors.append(err("daily_role_must_be_visitor", usernames=", ".join(invalid_role_usernames)))
 
     if errors:
         raise ValueError("\n".join(sorted(set(errors))))
 
 
+# Contract: _resolve_target_profile executes one deterministic step in the workflow.
 def _resolve_target_profile(
     db: Session,
     row: pd.Series,
@@ -172,7 +181,7 @@ def _resolve_target_profile(
 
     if profile_by_code and profile_by_user and profile_by_code.id != profile_by_user.id:
         raise ValueError(
-            f"Conflict in profile mapping for username='{username}' and visitor_code='{visitor_code}'."
+            f"تداخل نگاشت برای username='{username}' و visitor_code='{visitor_code}' وجود دارد."
         )
 
     target_profile = profile_by_code or profile_by_user
@@ -202,6 +211,7 @@ def _resolve_target_profile(
     return target_profile
 
 
+# Contract: upsert_daily_visitor_statuses executes one deterministic step in the workflow.
 def upsert_daily_visitor_statuses(df: pd.DataFrame, db: Session) -> int:
     users = (
         db.query(User)
@@ -266,6 +276,7 @@ def upsert_daily_visitor_statuses(df: pd.DataFrame, db: Session) -> int:
         raise
 
 
+# Contract: import_daily_visitor_statuses_from_excel executes one deterministic step in the workflow.
 def import_daily_visitor_statuses_from_excel(file_path: str | Path, db: Session) -> int:
     df = read_daily_visitor_status_excel(file_path)
     df = normalize_column_names(df)

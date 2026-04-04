@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -13,6 +16,7 @@ from server.db.create_tables import create_tables
 from server.db.database import get_db_session
 
 
+# Contract: test_generate_routes_pipeline executes one deterministic step in the workflow.
 @pytest.mark.integration
 def test_generate_routes_pipeline() -> None:
     create_tables()

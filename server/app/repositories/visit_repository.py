@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -11,14 +14,17 @@ from server.app.models.visit import Visit
 from server.app.models.visitor_profile import VisitorProfile
 
 
+# Contract: get_visit_by_assignment_id executes one deterministic step in the workflow.
 def get_visit_by_assignment_id(db: Session, assignment_id: int) -> Visit | None:
     return db.query(Visit).filter(Visit.assignment_id == assignment_id).first()
 
 
+# Contract: get_visit_by_id executes one deterministic step in the workflow.
 def get_visit_by_id(db: Session, visit_id: int) -> Visit | None:
     return db.query(Visit).filter(Visit.id == visit_id).first()
 
 
+# Contract: list_visit_ids_by_assignment_ids executes one deterministic step in the workflow.
 def list_visit_ids_by_assignment_ids(db: Session, assignment_ids: list[int]) -> list[int]:
     if not assignment_ids:
         return []
@@ -26,6 +32,7 @@ def list_visit_ids_by_assignment_ids(db: Session, assignment_ids: list[int]) -> 
     return [int(visit_id) for (visit_id,) in rows]
 
 
+# Contract: delete_visits_by_assignment_ids executes one deterministic step in the workflow.
 def delete_visits_by_assignment_ids(db: Session, assignment_ids: list[int]) -> int:
     if not assignment_ids:
         return 0
@@ -36,6 +43,7 @@ def delete_visits_by_assignment_ids(db: Session, assignment_ids: list[int]) -> i
     )
 
 
+# Contract: list_visit_events_for_store executes one deterministic step in the workflow.
 def list_visit_events_for_store(db: Session, store_id: int) -> list[tuple]:
     return (
         db.query(Visit.visit_date, Visit.result)
@@ -45,6 +53,7 @@ def list_visit_events_for_store(db: Session, store_id: int) -> list[tuple]:
     )
 
 
+# Contract: list_pending_published_assignments_without_visit executes one deterministic step in the workflow.
 def list_pending_published_assignments_without_visit(
     db: Session, work_date: date
 ) -> list[DailyAssignment]:
@@ -60,6 +69,7 @@ def list_pending_published_assignments_without_visit(
     )
 
 
+# Contract: list_rows_for_visit_table executes one deterministic step in the workflow.
 def list_rows_for_visit_table(db: Session, work_date: date) -> list[tuple]:
     return (
         db.query(

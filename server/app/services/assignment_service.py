@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
@@ -7,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.roles import UserRole
-from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError
+from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError, err
 from server.app.models.daily_assignment import DailyAssignment
 from server.app.models.store import Store
 from server.app.models.store_schedule_state import StoreScheduleState
@@ -24,14 +27,25 @@ from server.app.services import routing_service, scheduling_service
 QUALITY_GATE_THRESHOLD_PCT = 20.0
 
 
+# Contract: _assert_manager_user executes one deterministic step in the workflow.
 def _assert_manager_user(db: Session, manager_user_id: int) -> None:
     user = user_repository.get_user_by_id(db, manager_user_id)
     if not user:
-        raise ValidationError(f"Manager user id {manager_user_id} not found.")
+        raise ValidationError(err("manager_user_not_found"))
     if user.role != UserRole.MANAGER.value:
-        raise AppPermissionError("Only manager users can generate or publish assignments.")
+        raise AppPermissionError(err("manager_only_generate_publish"))
 
 
+def _assert_supervisor_user(db: Session, supervisor_user_id: int) -> None:
+    # FIX: [UX-10] Explicit permission boundary for supervisor approval workflow.
+    user = user_repository.get_user_by_id(db, supervisor_user_id)
+    if not user:
+        raise ValidationError("کاربر سرپرست معتبر پیدا نشد.")
+    if user.role != UserRole.SUPERVISOR.value:
+        raise AppPermissionError(err("supervisor_only_approve"))
+
+
+# Contract: _haversine_km executes one deterministic step in the workflow.
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius_km = 6371.0
     d_lat = radians(lat2 - lat1)
@@ -44,6 +58,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return radius_km * c
 
 
+# Contract: get_active_visitor_day_contexts executes one deterministic step in the workflow.
 def get_active_visitor_day_contexts(db: Session, work_date: date) -> list[dict]:
     rows = visitor_repository.list_active_day_context_rows(db=db, work_date=work_date)
 
@@ -82,8 +97,9 @@ def get_active_visitor_day_contexts(db: Session, work_date: date) -> list[dict]:
     return contexts
 
 
+# Contract: _get_due_stores_sorted executes one deterministic step in the workflow.
 def _get_due_stores_sorted(db: Session, work_date: date) -> list[Store]:
-    due_store_ids = scheduling_service.get_due_store_ids(db, work_date)
+    due_store_ids = scheduling_service.get_due_store_ids_readonly(db, work_date)
     if not due_store_ids:
         return []
 
@@ -91,6 +107,7 @@ def _get_due_stores_sorted(db: Session, work_date: date) -> list[Store]:
     states = store_repository.list_schedule_states_by_store_ids(db=db, store_ids=due_store_ids)
     states_by_store_id = {state.store_id: state for state in states}
 
+    # Contract: sort_key executes one deterministic step in the workflow.
     def sort_key(store: Store):
         state = states_by_store_id.get(store.id)
         overdue_days = state.overdue_days if state else 0
@@ -101,10 +118,12 @@ def _get_due_stores_sorted(db: Session, work_date: date) -> list[Store]:
     return sorted(stores, key=sort_key)
 
 
+# Contract: _delete_existing_drafts executes one deterministic step in the workflow.
 def _delete_existing_drafts(db: Session, work_date: date) -> int:
     return assignment_repository.delete_draft_assignments_for_date(db=db, work_date=work_date)
 
 
+# Contract: _select_closest_store_for_visitor executes one deterministic step in the workflow.
 def _select_closest_store_for_visitor(
     visitor_state: dict,
     unassigned_stores: list[Store],
@@ -131,6 +150,7 @@ def _select_closest_store_for_visitor(
     return nearest_store, distance
 
 
+# Contract: _geo_capacity_allocate_stores executes one deterministic step in the workflow.
 def _geo_capacity_allocate_stores(visitors: list[dict], due_stores: list[Store]) -> dict[int, list[Store]]:
     allocations: dict[int, list[Store]] = {visitor["visitor_id"]: [] for visitor in visitors}
     if not visitors or not due_stores:
@@ -198,6 +218,7 @@ def _geo_capacity_allocate_stores(visitors: list[dict], due_stores: list[Store])
     return allocations
 
 
+# Contract: generate_draft_assignments executes one deterministic step in the workflow.
 def generate_draft_assignments(
     db: Session,
     work_date: date,
@@ -205,16 +226,14 @@ def generate_draft_assignments(
     replace_existing_draft: bool = True,
 ) -> dict:
     _assert_manager_user(db, manager_user_id)
+    scheduling_service.prepare_schedule_state_for_date(db=db, target_date=work_date)  # FIX: [ARCH-03] Move schedule-state writes to manager pipeline path.
 
     existing_non_draft_count = assignment_repository.count_non_draft_assignments_for_date(
         db=db,
         work_date=work_date,
     )
     if existing_non_draft_count > 0:
-        raise DomainError(
-            "Non-draft assignments already exist for this date. "
-            "MVP policy blocks draft regeneration after publish/finalize."
-        )
+        raise DomainError(err("non_draft_exists_block_regen"))
 
     if replace_existing_draft:
         _delete_existing_drafts(db, work_date)
@@ -224,7 +243,7 @@ def generate_draft_assignments(
             work_date=work_date,
         )
         if existing_draft_count > 0:
-            raise DomainError("Draft assignments already exist for this date.")
+            raise DomainError(err("draft_exists_for_date"))
 
     visitors = get_active_visitor_day_contexts(db, work_date)
     due_stores = _get_due_stores_sorted(db, work_date)
@@ -267,8 +286,9 @@ def generate_draft_assignments(
     }
 
 
+# Contract: get_unassigned_due_store_ids executes one deterministic step in the workflow.
 def get_unassigned_due_store_ids(db: Session, work_date: date) -> list[int]:
-    due_store_ids = set(scheduling_service.get_due_store_ids(db, work_date))
+    due_store_ids = set(scheduling_service.get_due_store_ids_readonly(db, work_date))
     if not due_store_ids:
         return []
 
@@ -278,22 +298,61 @@ def get_unassigned_due_store_ids(db: Session, work_date: date) -> list[int]:
     return sorted(due_store_ids - assigned_store_ids)
 
 
-def publish_assignments(db: Session, work_date: date, manager_user_id: int) -> int:
+# Contract: publish_assignments executes one deterministic step in the workflow.
+def publish_assignments(
+    db: Session,
+    work_date: date,
+    manager_user_id: int,
+    include_draft_override: bool = False,
+) -> int:
+    # FIX: [UX-10] Publish defaults to supervisor_approved; manager can override to include draft.
     _assert_manager_user(db, manager_user_id)
 
-    draft_assignments = assignment_repository.list_draft_assignments_for_publish(
+    publishable_assignments = assignment_repository.list_assignments_for_publish(
         db=db,
         work_date=work_date,
+        include_draft_override=include_draft_override,
     )
-    if not draft_assignments:
-        raise DomainError("No draft assignments found for this date.")
+    if not publishable_assignments:
+        raise DomainError(
+            err("no_draft_assignments")
+            if include_draft_override
+            else err("no_supervisor_approved_to_publish")
+        )
 
     try:
         publish_time = datetime.now(timezone.utc)
-        for assignment in draft_assignments:
+        for assignment in publishable_assignments:
             assignment.assignment_status = AssignmentStatus.PUBLISHED.value
             assignment.published_at = publish_time
 
+        db.commit()
+        return len(publishable_assignments)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def approve_visitor_route_for_work_date(
+    db: Session,
+    work_date: date,
+    visitor_id: int,
+    supervisor_user_id: int,
+) -> int:
+    # FIX: [UX-10] Supervisor can move draft assignments to supervisor_approved per visitor/date.
+    _assert_supervisor_user(db=db, supervisor_user_id=supervisor_user_id)
+    draft_assignments = assignment_repository.list_assignments_for_visitor_date(
+        db=db,
+        work_date=work_date,
+        visitor_id=visitor_id,
+        status=AssignmentStatus.DRAFT.value,
+    )
+    if not draft_assignments:
+        raise DomainError(err("no_draft_for_visitor_approve"))
+
+    try:
+        for assignment in draft_assignments:
+            assignment.assignment_status = AssignmentStatus.SUPERVISOR_APPROVED.value
         db.commit()
         return len(draft_assignments)
     except Exception:
@@ -301,8 +360,18 @@ def publish_assignments(db: Session, work_date: date, manager_user_id: int) -> i
         raise
 
 
+# Contract: get_work_date_operational_snapshot executes one deterministic step in the workflow.
 def get_work_date_operational_snapshot(db: Session, work_date: date) -> dict:
     assignment_count = assignment_repository.count_assignments_for_date(db=db, work_date=work_date)
+    status_counts = assignment_repository.count_assignments_grouped_by_status(
+        db=db,
+        work_date=work_date,
+    )
+    draft_count = int(status_counts.get(AssignmentStatus.DRAFT.value, 0))
+    supervisor_approved_count = int(status_counts.get(AssignmentStatus.SUPERVISOR_APPROVED.value, 0))
+    published_count = int(status_counts.get(AssignmentStatus.PUBLISHED.value, 0))
+    completed_count = int(status_counts.get(AssignmentStatus.COMPLETED.value, 0))
+    skipped_count = int(status_counts.get(AssignmentStatus.SKIPPED.value, 0))
     non_draft_count = assignment_repository.count_non_draft_assignments_for_date(
         db=db,
         work_date=work_date,
@@ -319,13 +388,44 @@ def get_work_date_operational_snapshot(db: Session, work_date: date) -> dict:
     return {
         "work_date": work_date.isoformat(),
         "assignment_count": int(assignment_count),
+        "draft_count": draft_count,
+        "supervisor_approved_count": supervisor_approved_count,
+        "published_count": published_count,
+        "completed_count": completed_count,
+        "skipped_count": skipped_count,
         "non_draft_count": int(non_draft_count),
         "visit_count": int(visit_count),
         "followup_count": int(followup_count),
-        "is_locked": bool(non_draft_count > 0 or visit_count > 0 or followup_count > 0),
+        "is_locked": bool(
+            published_count > 0
+            or completed_count > 0
+            or skipped_count > 0
+            or visit_count > 0
+            or followup_count > 0
+        ),
     }
 
 
+def reset_draft_assignments_for_date(
+    db: Session,
+    work_date: date,
+    manager_user_id: int,
+) -> dict:
+    # FIX: [UX-05] Soft reset to only remove draft assignments when no visit/follow-up exists.
+    _assert_manager_user(db=db, manager_user_id=manager_user_id)
+    snapshot = get_work_date_operational_snapshot(db=db, work_date=work_date)
+    if snapshot["visit_count"] > 0 or snapshot["followup_count"] > 0:
+        raise DomainError("برای این تاریخ ویزیت یا پیگیری ثبت شده است؛ فقط پاک‌سازی کامل مجاز است.")
+
+    deleted_count = assignment_repository.delete_draft_assignments_for_date(db=db, work_date=work_date)
+    db.commit()
+    return {
+        "work_date": work_date.isoformat(),
+        "deleted_draft_count": int(deleted_count),
+    }
+
+
+# Contract: _rebuild_store_schedule_state_from_history executes one deterministic step in the workflow.
 def _rebuild_store_schedule_state_from_history(
     db: Session,
     store_id: int,
@@ -386,6 +486,7 @@ def _rebuild_store_schedule_state_from_history(
             )
 
 
+# Contract: flush_work_date_operational_data executes one deterministic step in the workflow.
 def flush_work_date_operational_data(db: Session, work_date: date, manager_user_id: int) -> dict:
     _assert_manager_user(db, manager_user_id)
 
@@ -438,6 +539,7 @@ def flush_work_date_operational_data(db: Session, work_date: date, manager_user_
     }
 
 
+# Contract: _calculate_path_length_for_rows executes one deterministic step in the workflow.
 def _calculate_path_length_for_rows(
     start_lat: float | None,
     start_lon: float | None,
@@ -458,6 +560,7 @@ def _calculate_path_length_for_rows(
     return total
 
 
+# Contract: evaluate_route_quality_vs_round_robin executes one deterministic step in the workflow.
 def evaluate_route_quality_vs_round_robin(db: Session, work_date: date) -> dict:
     assignment_rows = (
         db.query(
@@ -478,6 +581,7 @@ def evaluate_route_quality_vs_round_robin(db: Session, work_date: date) -> dict:
             "baseline_km": 0.0,
             "current_km": 0.0,
             "improvement_pct": 0.0,
+            "comparable": False,
             "passes_gate": False,
         }
 
@@ -564,5 +668,6 @@ def evaluate_route_quality_vs_round_robin(db: Session, work_date: date) -> dict:
         "baseline_km": round(baseline_total_km, 3),
         "current_km": round(current_total_km, 3),
         "improvement_pct": round(improvement_pct, 2),
+        "comparable": bool(baseline_total_km > 0),
         "passes_gate": bool(improvement_pct >= QUALITY_GATE_THRESHOLD_PCT),
     }

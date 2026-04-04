@@ -1,7 +1,11 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
+from server.app.errors import err
 from server.app.enums.telesales_outcome import TelesalesOutcome
 from server.app.enums.visit_result import VisitResult
 from server.app.models.store import Store
@@ -29,10 +33,12 @@ PASTA_INTERVALS = {
 }
 
 
+# Contract: _normalize_grade executes one deterministic step in the workflow.
 def _normalize_grade(grade: str) -> str:
     return str(grade or "").strip().upper()
 
 
+# Contract: _get_or_create_state executes one deterministic step in the workflow.
 def _get_or_create_state(db: Session, store_id: int, baseline_date: date) -> StoreScheduleState:
     state = (
         db.query(StoreScheduleState)
@@ -53,10 +59,11 @@ def _get_or_create_state(db: Session, store_id: int, baseline_date: date) -> Sto
     return state
 
 
+# Contract: get_store_visit_interval_days executes one deterministic step in the workflow.
 def get_store_visit_interval_days(store: Store) -> int:
     grade = _normalize_grade(store.grade)
     if grade not in CONFECTIONERY_OIL_INTERVALS and grade not in PASTA_INTERVALS:
-        raise ValueError(f"Unsupported store grade: {store.grade}")
+        raise ValueError(err("unsupported_store_grade", grade=store.grade))
 
     candidate_intervals: list[int] = []
 
@@ -68,13 +75,12 @@ def get_store_visit_interval_days(store: Store) -> int:
         candidate_intervals.append(PASTA_INTERVALS[grade])
 
     if not candidate_intervals:
-        raise ValueError(
-            f"Store '{store.store_code}' has no active product category for scheduling."
-        )
+        raise ValueError(err("store_no_active_category", store_code=store.store_code))
 
     return min(candidate_intervals)
 
 
+# Contract: compute_overdue_days executes one deterministic step in the workflow.
 def compute_overdue_days(next_visit_date: date | None, target_date: date) -> int:
     if next_visit_date is None:
         return 0
@@ -82,6 +88,7 @@ def compute_overdue_days(next_visit_date: date | None, target_date: date) -> int
     return max(delta_days, 0)
 
 
+# Contract: ensure_store_schedule_state_rows executes one deterministic step in the workflow.
 def ensure_store_schedule_state_rows(db: Session, target_date: date) -> int:
     created_count = 0
 
@@ -112,6 +119,14 @@ def ensure_store_schedule_state_rows(db: Session, target_date: date) -> int:
         raise
 
 
+def prepare_schedule_state_for_date(db: Session, target_date: date) -> dict:
+    # FIX: [ARCH-03] Explicit write step to be called during manager pipeline only.
+    created = ensure_store_schedule_state_rows(db, target_date)
+    refreshed = refresh_overdue_days(db, target_date)
+    return {"created_rows": int(created), "refreshed_rows": int(refreshed)}
+
+
+# Contract: refresh_overdue_days executes one deterministic step in the workflow.
 def refresh_overdue_days(db: Session, target_date: date) -> int:
     updated_count = 0
     try:
@@ -133,10 +148,9 @@ def refresh_overdue_days(db: Session, target_date: date) -> int:
         raise
 
 
-def get_due_store_ids(db: Session, target_date: date) -> list[int]:
-    ensure_store_schedule_state_rows(db, target_date)
-    refresh_overdue_days(db, target_date)
-
+# Contract: get_due_store_ids executes one deterministic step in the workflow.
+def get_due_store_ids_readonly(db: Session, target_date: date) -> list[int]:
+    # FIX: [ARCH-03] Read-only query path with no DB writes.
     rows = (
         db.query(StoreScheduleState.store_id)
         .join(Store, Store.id == StoreScheduleState.store_id)
@@ -151,6 +165,12 @@ def get_due_store_ids(db: Session, target_date: date) -> list[int]:
     return [store_id for (store_id,) in rows]
 
 
+def get_due_store_ids(db: Session, target_date: date) -> list[int]:
+    # Backward-compatible alias kept for existing callers.
+    return get_due_store_ids_readonly(db=db, target_date=target_date)
+
+
+# Contract: apply_visit_result_to_schedule executes one deterministic step in the workflow.
 def apply_visit_result_to_schedule(
     db: Session,
     store_id: int,
@@ -161,11 +181,11 @@ def apply_visit_result_to_schedule(
     normalized_result = str(visit_result or "").strip().lower()
     allowed_results = {item.value for item in VisitResult}
     if normalized_result not in allowed_results:
-        raise ValueError(f"Invalid visit result: {visit_result}")
+        raise ValueError(err("invalid_visit_result"))
 
     store = db.query(Store).filter(Store.id == store_id).first()
     if not store:
-        raise ValueError(f"Store id {store_id} not found.")
+        raise ValueError(err("store_not_found"))
 
     try:
         state = _get_or_create_state(db, store_id, visit_date)
@@ -194,6 +214,7 @@ def apply_visit_result_to_schedule(
         raise
 
 
+# Contract: apply_telesales_outcome_to_schedule executes one deterministic step in the workflow.
 def apply_telesales_outcome_to_schedule(
     db: Session,
     store_id: int,
@@ -204,11 +225,11 @@ def apply_telesales_outcome_to_schedule(
     normalized_outcome = str(outcome or "").strip().lower()
     allowed_outcomes = {item.value for item in TelesalesOutcome}
     if normalized_outcome not in allowed_outcomes:
-        raise ValueError(f"Invalid telesales outcome: {outcome}")
+        raise ValueError(err("invalid_telesales_outcome"))
 
     store = db.query(Store).filter(Store.id == store_id).first()
     if not store:
-        raise ValueError(f"Store id {store_id} not found.")
+        raise ValueError(err("store_not_found"))
 
     try:
         state = _get_or_create_state(db, store_id, followup_date)

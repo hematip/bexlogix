@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 DEFAULT_DAILY_CAPACITY = 30
 YELLOW_RETRY_DAYS = 3
 

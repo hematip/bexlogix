@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -13,10 +16,12 @@ from server.app.models.visit import Visit
 from server.app.models.visitor_profile import VisitorProfile
 
 
+# Contract: get_assignment_by_id executes one deterministic step in the workflow.
 def get_assignment_by_id(db: Session, assignment_id: int) -> DailyAssignment | None:
     return db.query(DailyAssignment).filter(DailyAssignment.id == assignment_id).first()
 
 
+# Contract: list_assignments_for_visitor_date executes one deterministic step in the workflow.
 def list_assignments_for_visitor_date(
     db: Session,
     work_date: date,
@@ -32,6 +37,7 @@ def list_assignments_for_visitor_date(
     return query.all()
 
 
+# Contract: list_draft_assignments_with_store_for_visitor_date executes one deterministic step in the workflow.
 def list_draft_assignments_with_store_for_visitor_date(
     db: Session,
     work_date: date,
@@ -49,6 +55,7 @@ def list_draft_assignments_with_store_for_visitor_date(
     )
 
 
+# Contract: count_non_draft_assignments_for_date executes one deterministic step in the workflow.
 def count_non_draft_assignments_for_date(db: Session, work_date: date) -> int:
     return (
         db.query(DailyAssignment)
@@ -60,6 +67,7 @@ def count_non_draft_assignments_for_date(db: Session, work_date: date) -> int:
     )
 
 
+# Contract: count_draft_assignments_for_date executes one deterministic step in the workflow.
 def count_draft_assignments_for_date(db: Session, work_date: date) -> int:
     return (
         db.query(DailyAssignment)
@@ -71,6 +79,7 @@ def count_draft_assignments_for_date(db: Session, work_date: date) -> int:
     )
 
 
+# Contract: count_published_assignments_for_visitor_date executes one deterministic step in the workflow.
 def count_published_assignments_for_visitor_date(
     db: Session,
     work_date: date,
@@ -87,6 +96,7 @@ def count_published_assignments_for_visitor_date(
     )
 
 
+# Contract: delete_draft_assignments_for_date executes one deterministic step in the workflow.
 def delete_draft_assignments_for_date(db: Session, work_date: date) -> int:
     rows = (
         db.query(DailyAssignment)
@@ -102,6 +112,7 @@ def delete_draft_assignments_for_date(db: Session, work_date: date) -> int:
     return count
 
 
+# Contract: list_draft_assignments_for_publish executes one deterministic step in the workflow.
 def list_draft_assignments_for_publish(db: Session, work_date: date) -> list[DailyAssignment]:
     return (
         db.query(DailyAssignment)
@@ -113,6 +124,26 @@ def list_draft_assignments_for_publish(db: Session, work_date: date) -> list[Dai
     )
 
 
+def list_assignments_for_publish(
+    db: Session,
+    work_date: date,
+    include_draft_override: bool = False,
+) -> list[DailyAssignment]:
+    # FIX: [UX-10] Publish prefers supervisor_approved routes unless manager override is enabled.
+    allowed_statuses = [AssignmentStatus.SUPERVISOR_APPROVED.value]
+    if include_draft_override:
+        allowed_statuses.append(AssignmentStatus.DRAFT.value)
+    return (
+        db.query(DailyAssignment)
+        .filter(
+            DailyAssignment.work_date == work_date,
+            DailyAssignment.assignment_status.in_(allowed_statuses),
+        )
+        .all()
+    )
+
+
+# Contract: list_visitor_ids_with_draft_assignments executes one deterministic step in the workflow.
 def list_visitor_ids_with_draft_assignments(db: Session, work_date: date) -> list[int]:
     rows = (
         db.query(DailyAssignment.visitor_id)
@@ -126,6 +157,7 @@ def list_visitor_ids_with_draft_assignments(db: Session, work_date: date) -> lis
     return [visitor_id for (visitor_id,) in rows]
 
 
+# Contract: list_assignment_ids_and_store_ids_for_date executes one deterministic step in the workflow.
 def list_assignment_ids_and_store_ids_for_date(
     db: Session, work_date: date
 ) -> list[tuple[int, int]]:
@@ -136,6 +168,7 @@ def list_assignment_ids_and_store_ids_for_date(
     )
 
 
+# Contract: list_assigned_store_ids_for_date executes one deterministic step in the workflow.
 def list_assigned_store_ids_for_date(db: Session, work_date: date) -> list[int]:
     rows = (
         db.query(DailyAssignment.store_id)
@@ -145,6 +178,7 @@ def list_assigned_store_ids_for_date(db: Session, work_date: date) -> list[int]:
     return [int(store_id) for (store_id,) in rows]
 
 
+# Contract: delete_assignments_for_date executes one deterministic step in the workflow.
 def delete_assignments_for_date(db: Session, work_date: date) -> int:
     return (
         db.query(DailyAssignment)
@@ -153,10 +187,26 @@ def delete_assignments_for_date(db: Session, work_date: date) -> int:
     )
 
 
+# Contract: count_assignments_for_date executes one deterministic step in the workflow.
 def count_assignments_for_date(db: Session, work_date: date) -> int:
     return db.query(DailyAssignment).filter(DailyAssignment.work_date == work_date).count()
 
 
+def count_assignments_grouped_by_status(db: Session, work_date: date) -> dict[str, int]:
+    # FIX: [UX-05] Provide per-status counts for lock reason visibility.
+    rows = (
+        db.query(DailyAssignment.assignment_status, DailyAssignment.id)
+        .filter(DailyAssignment.work_date == work_date)
+        .all()
+    )
+    counts: dict[str, int] = {}
+    for status, _assignment_id in rows:
+        normalized = str(status or "").strip().lower()
+        counts[normalized] = counts.get(normalized, 0) + 1
+    return counts
+
+
+# Contract: count_visits_linked_to_assignment_date executes one deterministic step in the workflow.
 def count_visits_linked_to_assignment_date(db: Session, work_date: date) -> int:
     return (
         db.query(Visit)
@@ -166,6 +216,7 @@ def count_visits_linked_to_assignment_date(db: Session, work_date: date) -> int:
     )
 
 
+# Contract: count_followups_linked_to_assignment_date executes one deterministic step in the workflow.
 def count_followups_linked_to_assignment_date(db: Session, work_date: date) -> int:
     return (
         db.query(TelesalesFollowup)
@@ -176,6 +227,7 @@ def count_followups_linked_to_assignment_date(db: Session, work_date: date) -> i
     )
 
 
+# Contract: list_rows_for_assignment_table executes one deterministic step in the workflow.
 def list_rows_for_assignment_table(db: Session, work_date: date) -> list[tuple]:
     return (
         db.query(
@@ -203,6 +255,7 @@ def list_rows_for_assignment_table(db: Session, work_date: date) -> list[tuple]:
     )
 
 
+# Contract: list_rows_for_route_map executes one deterministic step in the workflow.
 def list_rows_for_route_map(db: Session, work_date: date, visitor_id: int) -> list[tuple]:
     return (
         db.query(
@@ -240,6 +293,7 @@ def list_rows_for_route_map(db: Session, work_date: date, visitor_id: int) -> li
     )
 
 
+# Contract: list_rows_for_visitor_panel executes one deterministic step in the workflow.
 def list_rows_for_visitor_panel(db: Session, work_date: date, visitor_id: int) -> list[tuple]:
     return (
         db.query(

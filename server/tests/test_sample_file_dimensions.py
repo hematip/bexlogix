@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,6 +10,7 @@ import pandas as pd
 DATA_DIR = Path("data")
 
 
+# Contract: test_sample_file_dimensions_and_schema executes one deterministic step in the workflow.
 def test_sample_file_dimensions_and_schema() -> None:
     stores_df = pd.read_excel(DATA_DIR / "stores_sample_300.xlsx")
     visitors_df = pd.read_excel(DATA_DIR / "visitors_sample_10.xlsx")

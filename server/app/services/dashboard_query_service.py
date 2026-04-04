@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -8,15 +11,18 @@ from sqlalchemy.orm import Session
 from server.app.repositories import assignment_repository, visit_repository, visitor_repository
 
 
+# Contract: get_visitor_options executes one deterministic step in the workflow.
 def get_visitor_options(db: Session, work_date: date) -> dict[str, int]:
     rows = visitor_repository.list_visitor_code_rows_for_date(db=db, work_date=work_date)
     return {str(code): int(visitor_id) for visitor_id, code in rows}
 
 
+# Contract: get_daily_status_row_count executes one deterministic step in the workflow.
 def get_daily_status_row_count(db: Session, work_date: date) -> int:
     return visitor_repository.count_daily_status_rows_for_date(db=db, work_date=work_date)
 
 
+# Contract: load_manager_assignments_df executes one deterministic step in the workflow.
 def load_manager_assignments_df(db: Session, work_date: date) -> pd.DataFrame:
     rows = assignment_repository.list_rows_for_assignment_table(db=db, work_date=work_date)
     return pd.DataFrame(
@@ -37,6 +43,7 @@ def load_manager_assignments_df(db: Session, work_date: date) -> pd.DataFrame:
     )
 
 
+# Contract: load_route_map_df executes one deterministic step in the workflow.
 def load_route_map_df(db: Session, work_date: date, visitor_id: int) -> pd.DataFrame:
     rows = assignment_repository.list_rows_for_route_map(
         db=db,
@@ -67,6 +74,7 @@ def load_route_map_df(db: Session, work_date: date, visitor_id: int) -> pd.DataF
     )
 
 
+# Contract: load_supervisor_assignments_df executes one deterministic step in the workflow.
 def load_supervisor_assignments_df(db: Session, work_date: date) -> pd.DataFrame:
     df = load_manager_assignments_df(db=db, work_date=work_date)
     if "assignment_id" in df.columns:
@@ -74,6 +82,7 @@ def load_supervisor_assignments_df(db: Session, work_date: date) -> pd.DataFrame
     return df
 
 
+# Contract: load_supervisor_visits_df executes one deterministic step in the workflow.
 def load_supervisor_visits_df(db: Session, work_date: date) -> pd.DataFrame:
     rows = visit_repository.list_rows_for_visit_table(db=db, work_date=work_date)
     return pd.DataFrame(
@@ -91,10 +100,12 @@ def load_supervisor_visits_df(db: Session, work_date: date) -> pd.DataFrame:
     )
 
 
+# Contract: get_visitor_profile_for_user executes one deterministic step in the workflow.
 def get_visitor_profile_for_user(db: Session, user_id: int):
     return visitor_repository.get_profile_by_user_id(db=db, user_id=user_id)
 
 
+# Contract: load_visitor_assignments_df executes one deterministic step in the workflow.
 def load_visitor_assignments_df(db: Session, work_date: date, visitor_id: int) -> pd.DataFrame:
     rows = assignment_repository.list_rows_for_visitor_panel(
         db=db,

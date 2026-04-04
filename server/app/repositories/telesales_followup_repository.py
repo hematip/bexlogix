@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -10,10 +13,12 @@ from server.app.models.visit import Visit
 from server.app.models.visitor_profile import VisitorProfile
 
 
+# Contract: get_followup_by_id executes one deterministic step in the workflow.
 def get_followup_by_id(db: Session, followup_id: int) -> TelesalesFollowup | None:
     return db.query(TelesalesFollowup).filter(TelesalesFollowup.id == followup_id).first()
 
 
+# Contract: get_open_followup_by_visit_id executes one deterministic step in the workflow.
 def get_open_followup_by_visit_id(db: Session, visit_id: int) -> TelesalesFollowup | None:
     return (
         db.query(TelesalesFollowup)
@@ -25,6 +30,7 @@ def get_open_followup_by_visit_id(db: Session, visit_id: int) -> TelesalesFollow
     )
 
 
+# Contract: delete_followups_by_visit_ids executes one deterministic step in the workflow.
 def delete_followups_by_visit_ids(db: Session, visit_ids: list[int]) -> int:
     if not visit_ids:
         return 0
@@ -35,6 +41,7 @@ def delete_followups_by_visit_ids(db: Session, visit_ids: list[int]) -> int:
     )
 
 
+# Contract: list_finalized_followup_events_for_store executes one deterministic step in the workflow.
 def list_finalized_followup_events_for_store(db: Session, store_id: int) -> list[tuple]:
     return (
         db.query(TelesalesFollowup.followup_date, TelesalesFollowup.result)
@@ -47,6 +54,7 @@ def list_finalized_followup_events_for_store(db: Session, store_id: int) -> list
     )
 
 
+# Contract: list_pending_followup_rows executes one deterministic step in the workflow.
 def list_pending_followup_rows(db: Session, as_of_date: date | None = None) -> list[tuple]:
     query = (
         db.query(TelesalesFollowup, Store, Visit, VisitorProfile)

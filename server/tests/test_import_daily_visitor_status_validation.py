@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 import os
@@ -13,6 +16,7 @@ from server.app.services.import_users_service import import_users_from_excel
 from server.db.database import get_db_session
 
 
+# Contract: _run_case executes one deterministic step in the workflow.
 def _run_case(df: pd.DataFrame, expected_message_part: str) -> None:
     temp_path = None
     db = get_db_session()
@@ -30,6 +34,7 @@ def _run_case(df: pd.DataFrame, expected_message_part: str) -> None:
             os.remove(temp_path)
 
 
+# Contract: _base_df executes one deterministic step in the workflow.
 def _base_df() -> pd.DataFrame:
     return pd.DataFrame(
         [
@@ -47,6 +52,7 @@ def _base_df() -> pd.DataFrame:
     )
 
 
+# Contract: test_import_daily_visitor_status_validation_cases executes one deterministic step in the workflow.
 @pytest.mark.service
 def test_import_daily_visitor_status_validation_cases() -> None:
     db = get_db_session()

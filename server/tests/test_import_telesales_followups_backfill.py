@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +13,7 @@ from server.app.services.import_telesales_followups_service import (
 from server.db.database import get_db_session
 
 
+# Contract: test_import_telesales_followups_backfill_mode executes one deterministic step in the workflow.
 @pytest.mark.smoke
 def test_import_telesales_followups_backfill_mode() -> None:
     sample_path = Path("data/telesales_followups_sample.xlsx")

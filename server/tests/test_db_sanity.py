@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 import sqlite3
@@ -50,6 +53,7 @@ _CHECKS = [
 ]
 
 
+# Contract: test_db_sanity_checks executes one deterministic step in the workflow.
 @pytest.mark.integration
 def test_db_sanity_checks() -> None:
     if not DB_PATH.exists():

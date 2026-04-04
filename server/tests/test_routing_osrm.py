@@ -1,8 +1,12 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 import pytest
 
 from server.app.services import routing_service
 
 
+# Contract: _build_sample_stops executes one deterministic step in the workflow.
 def _build_sample_stops() -> list[dict]:
     return [
         {"assignment_id": 101, "store_code": "STR-A", "lat": 35.701, "lon": 51.401},
@@ -11,6 +15,7 @@ def _build_sample_stops() -> list[dict]:
     ]
 
 
+# Contract: test_osrm_success executes one deterministic step in the workflow.
 @pytest.mark.unit
 def test_osrm_success() -> None:
     planner = routing_service.OSRMRoutePlanner(
@@ -18,6 +23,7 @@ def test_osrm_success() -> None:
         fallback_planner=routing_service.NearestNeighborRoutePlanner(),
     )
 
+    # Contract: fake_request_payload executes one deterministic step in the workflow.
     def fake_request_payload(_: str) -> dict:
         return {
             "code": "Ok",
@@ -56,6 +62,7 @@ def test_osrm_success() -> None:
     assert by_assignment[103].route_distance_km == 3.5
 
 
+# Contract: test_osrm_fallback executes one deterministic step in the workflow.
 @pytest.mark.unit
 def test_osrm_fallback() -> None:
     planner = routing_service.OSRMRoutePlanner(
@@ -63,6 +70,7 @@ def test_osrm_fallback() -> None:
         fallback_planner=routing_service.NearestNeighborRoutePlanner(),
     )
 
+    # Contract: fake_raise executes one deterministic step in the workflow.
     def fake_raise(_: str) -> dict:
         raise TimeoutError("Simulated OSRM timeout")
 
@@ -80,10 +88,12 @@ def test_osrm_fallback() -> None:
     assert all(item.route_distance_km is not None for item in planned)
 
 
+# Contract: test_route_geometry_success executes one deterministic step in the workflow.
 @pytest.mark.unit
 def test_route_geometry_success() -> None:
     original_request = routing_service._request_osrm_payload
 
+    # Contract: fake_request executes one deterministic step in the workflow.
     def fake_request(url: str, timeout_seconds: float) -> dict:
         del url, timeout_seconds
         return {
@@ -115,10 +125,12 @@ def test_route_geometry_success() -> None:
     assert geometry == [[51.39, 35.69], [51.395, 35.695], [51.401, 35.701]]
 
 
+# Contract: test_route_geometry_failure_returns_empty executes one deterministic step in the workflow.
 @pytest.mark.unit
 def test_route_geometry_failure_returns_empty() -> None:
     original_request = routing_service._request_osrm_payload
 
+    # Contract: fake_raise executes one deterministic step in the workflow.
     def fake_raise(url: str, timeout_seconds: float) -> dict:
         del url, timeout_seconds
         raise TimeoutError("Simulated timeout")

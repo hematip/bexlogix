@@ -1,17 +1,28 @@
+# Purpose: Visitor panel for route execution and visit result submission.
+# Workflow Role: Field-user workflow for published assignments only.
+
+from __future__ import annotations
+
 from datetime import date
 import html
+import re
 
 import pandas as pd
 import streamlit as st
 
+from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
 from client.components.route_map import render_route_map
-from client.styles.neumorphism import neu_metric, neu_section_header, render_page_title, status_badge
+from client.styles.neumorphism import (
+    neu_section_header,
+    render_metric_grid,
+    render_page_title,
+    status_badge,
+)
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.visit_result import VisitResult
 from server.app.services import dashboard_query_service, reporting_export_service, visit_service
-from server.db.database import get_db_session
-
+from server.db.database import get_db
 
 RESULT_COLORS = {
     "green": "#27AE60",
@@ -25,40 +36,77 @@ VISIT_RESULT_LABELS = {
     VisitResult.RED.value: "قرمز (ویزیت انجام نشد)",
 }
 
-_EMPTY_NOTE_MARKERS = {"", "<div/>", "<div></div>", "<p></p>", "<br>", "<br/>", "<br />", "nan", "none"}
+_EMPTY_NOTE_MARKERS = {
+    "",
+    "<div/>",
+    "<div></div>",
+    "<div><br></div>",
+    "<div><br/></div>",
+    "<p></p>",
+    "<p><br></p>",
+    "<br>",
+    "<br/>",
+    "<br />",
+    "nan",
+    "none",
+    "null",
+}
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _normalized_note(value: object) -> str:
-    text = str(value or "").strip()
+    # FIX: Strip placeholder HTML so empty notes never render raw tags like <div/>.
+    raw_text = str(value or "").strip()
+    if raw_text.lower() in _EMPTY_NOTE_MARKERS:
+        return ""
+
+    without_tags = _HTML_TAG_RE.sub(" ", raw_text)
+    text = html.unescape(without_tags).replace("\xa0", " ").strip()
+    text = re.sub(r"\s+", " ", text)
     if text.lower() in _EMPTY_NOTE_MARKERS:
         return ""
     return text
 
 
-def _get_visitor_profile(user_id: int):
-    db = get_db_session()
-    try:
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_visitor_profile(user_id: int):
+    with get_db() as db:
         return dashboard_query_service.get_visitor_profile_for_user(db=db, user_id=user_id)
-    finally:
-        db.close()
 
 
-def _load_assignments(visitor_id: int, work_date: date) -> pd.DataFrame:
-    db = get_db_session()
-    try:
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_assignments(visitor_id: int, work_date_iso: str) -> pd.DataFrame:
+    work_date = date.fromisoformat(work_date_iso)
+    with get_db() as db:
         return dashboard_query_service.load_visitor_assignments_df(
             db=db,
             work_date=work_date,
             visitor_id=visitor_id,
         )
-    finally:
-        db.close()
+
+
+def _render_visit_progress(completed_count: int, total_stops: int) -> float:
+    # FIX: Visitor progress bar should be RTL and have right-aligned descriptive text.
+    progress_ratio = (completed_count / total_stops) if total_stops else 0.0
+    progress_pct = int(round(progress_ratio * 100))
+    progress_fill_color = "#27AE60" if progress_pct >= 100 else "#3D5FCC"
+    st.markdown(
+        f"""
+        <div class="visitor-progress-wrap">
+            <div class="visitor-progress-track">
+                <div class="visitor-progress-fill" style="width:{progress_pct}%; background:{progress_fill_color};"></div>
+            </div>
+            <div class="visitor-progress-note">{completed_count} از {total_stops} ویزیت انجام شده ({progress_pct}٪)</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    return progress_ratio
 
 
 def render_visitor_panel(current_user: dict) -> None:
     render_page_title("مسیر من")
-
-    profile = _get_visitor_profile(current_user["id"])
+    profile = _cached_visitor_profile(current_user["id"])
     if not profile:
         st.error("برای این حساب کاربری پروفایل ویزیتور پیدا نشد.")
         return
@@ -68,10 +116,11 @@ def render_visitor_panel(current_user: dict) -> None:
         key_prefix="visitor_work_date",
         default_gregorian=date.today(),
     )
-    assignments_df = _load_assignments(profile.id, work_date)
+    work_date_iso = work_date.isoformat()
+    assignments_df = _cached_assignments(profile.id, work_date_iso)
 
     if assignments_df.empty:
-        st.info("برای این تاریخ تخصیصی ثبت نشده است.")
+        st.info(get_empty_state_message(role="visitor", context="no_assignments"))
         return
 
     total_stops = len(assignments_df)
@@ -79,31 +128,32 @@ def render_visitor_panel(current_user: dict) -> None:
     total_km = assignments_df["route_distance_km"].dropna()
     max_distance = float(total_km.max()) if not total_km.empty else 0.0
 
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        neu_metric("تعداد توقف", total_stops)
-    with m2:
-        neu_metric("تکمیل‌شده", completed_count)
-    with m3:
-        neu_metric("مسافت مسیر (km)", f"{max_distance:.1f}")
+    # FIX: Better top-section alignment using responsive metric grid.
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
+    render_metric_grid(
+        [
+            ("تعداد توقف", total_stops),
+            ("تکمیل‌شده", completed_count),
+            ("مسافت مسیر (km)", f"{max_distance:.1f}"),
+        ]
+    )
+    progress_ratio = _render_visit_progress(completed_count=completed_count, total_stops=total_stops)
+    if progress_ratio >= 1:
+        st.success("همه توقف‌ها کامل شد. مسیر امروز با موفقیت پایان یافت.")
 
     neu_section_header("نقشه مسیر")
     render_route_map(assignments_df)
 
-    db = get_db_session()
-    try:
+    with get_db() as db:
         route_buf = reporting_export_service.export_visitor_route_excel(
             db=db,
             work_date=work_date,
             visitor_id=profile.id,
         )
-    finally:
-        db.close()
-
     st.download_button(
         label="📥 دانلود مسیر من",
         data=route_buf.getvalue(),
-        file_name=f"my_route_{work_date.isoformat()}.xlsx",
+        file_name=f"my_route_{work_date_iso}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
@@ -115,10 +165,10 @@ def render_visitor_panel(current_user: dict) -> None:
         with st.expander(expander_title, expanded=False):
             info_html = f"""
             <div class="neu-card-flat">
-                <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+                <div style="display:flex;gap:2rem;flex-wrap:wrap;direction:rtl;text-align:right;justify-content:flex-start;">
                     <div><strong>آدرس:</strong> {row['address'] or '—'}</div>
                     <div><strong>مختصات:</strong> {row['lat']}, {row['lon']}</div>
-                    <div><strong>وضعیت تخصیص:</strong> {status_badge(row['assignment_status'])}</div>
+                    <div><strong>وضعیت تخصیص:</strong> {status_badge(str(row['assignment_status']))}</div>
                 </div>
             </div>
             """
@@ -128,14 +178,10 @@ def render_visitor_panel(current_user: dict) -> None:
                 result = str(row["visit_result"])
                 color = RESULT_COLORS.get(result, "#6C7A89")
                 note_value = _normalized_note(row.get("visit_note"))
-                if note_value:
-                    note_block = f"<br/><em>{html.escape(note_value)}</em>"
-                elif result == VisitResult.RED.value:
-                    note_block = "<br/><em>یادداشت نوشته نشده است یا خالی.</em>"
-                else:
-                    note_block = ""
+                note_text = note_value if note_value else "یادداشت ثبت نشده است."
+                note_block = f"<br/><em>{html.escape(note_text)}</em>"
                 st.markdown(
-                    f"""<div class="neu-card-flat" style="border-right:4px solid {color};padding-right:1rem;">
+                    f"""<div class="neu-card-flat" style="border-right:4px solid {color};padding-right:1rem;direction:rtl;text-align:right;">
                         <strong>نتیجه ثبت‌شده:</strong> {status_badge(result)}
                         {note_block}
                     </div>""",
@@ -168,18 +214,17 @@ def render_visitor_panel(current_user: dict) -> None:
                 submitted = st.form_submit_button("ثبت نتیجه", use_container_width=True)
 
             if submitted:
-                db = get_db_session()
                 try:
-                    visit_service.submit_visit_result(
-                        db=db,
-                        assignment_id=int(row["assignment_id"]),
-                        visitor_user_id=current_user["id"],
-                        result=result,
-                        note=note,
-                    )
+                    with get_db() as db:
+                        visit_service.submit_visit_result(
+                            db=db,
+                            assignment_id=int(row["assignment_id"]),
+                            visitor_user_id=current_user["id"],
+                            result=result,
+                            note=note,
+                        )
                     st.success("نتیجه ویزیت با موفقیت ثبت شد.")
+                    st.cache_data.clear()
                     st.rerun()
                 except Exception as exc:
                     st.error(f"خطا در ثبت نتیجه: {exc}")
-                finally:
-                    db.close()

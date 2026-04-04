@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import datetime, timezone
 
 from server.app.enums.roles import UserRole
@@ -6,6 +9,7 @@ from server.app.models.visitor_profile import VisitorProfile
 from server.db.database import get_db_session
 
 #
+# Contract: main executes one deterministic step in the workflow.
 def main():
     db = get_db_session()
     try:

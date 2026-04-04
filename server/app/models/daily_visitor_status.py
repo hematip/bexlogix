@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date, datetime, timezone
 
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, UniqueConstraint
@@ -6,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from server.db.base import Base
 
 # Daily operational status for each visitor
+# Contract: DailyVisitorStatus defines a typed boundary and should remain behavior-stable.
 class DailyVisitorStatus(Base):
     __tablename__ = 'daily_visitor_statuses'
 

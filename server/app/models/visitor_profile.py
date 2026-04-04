@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
@@ -6,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from server.db.base import Base
 
 # Profile data for user with visitor role
+# Contract: VisitorProfile defines a typed boundary and should remain behavior-stable.
 class VisitorProfile(Base):
     __tablename__ = 'visitor_profiles'
 

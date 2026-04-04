@@ -1,0 +1,24 @@
+# Purpose: Centralized contextual empty-state messages for all roles.
+# Workflow Role: Improves UX guidance when operational datasets are empty.
+
+from __future__ import annotations
+
+
+def get_empty_state_message(role: str, context: str) -> str:
+    normalized_role = str(role or "").strip().lower()
+    normalized_context = str(context or "").strip().lower()
+
+    mapping = {
+        ("visitor", "no_assignments"): "مسیر شما برای این تاریخ هنوز منتشر نشده است. لطفاً با سرپرست تماس بگیرید یا تاریخ دیگری را انتخاب کنید.",
+        ("supervisor", "no_assignments"): "هیچ تخصیصی برای این تاریخ ثبت نشده است. برای ساخت مسیر به داشبورد مدیر مراجعه کنید.",
+        ("telesales", "no_queue"): "✅ هیچ پیگیری در انتظار وجود ندارد. کار عالی!",
+        ("manager", "no_due_stores"): "فروشگاهی در صف ویزیت وجود ندارد. فایل فروشگاه‌ها را بارگذاری کنید یا تاریخ دیگری را انتخاب کنید.",
+        ("manager", "no_assignments"): "برای این تاریخ هنوز تخصیصی ثبت نشده است. ابتدا فایل وضعیت روزانه را اعمال و مسیر را بسازید.",
+        ("manager", "no_pending_telesales"): "موردی در صف انتظار تماس تلفنی وجود ندارد.",
+        ("manager", "no_route_for_visitor"): "برای ویزیتور انتخاب‌شده هنوز مسیری ثبت نشده است.",
+        ("supervisor", "no_visits"): "برای این تاریخ هنوز نتیجه ویزیتی ثبت نشده است.",
+        ("supervisor", "no_telesales"): "موردی در صف فروش تلفنی وجود ندارد.",
+    }
+
+    return mapping.get((normalized_role, normalized_context), "داده‌ای برای نمایش در این بخش وجود ندارد.")
+

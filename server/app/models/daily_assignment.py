@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date, datetime, timezone
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String
@@ -6,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from server.db.base import Base
 
 # Daily assignment of a store to a a visitor
+# Contract: DailyAssignment defines a typed boundary and should remain behavior-stable.
 class DailyAssignment(Base):
     __tablename__ = 'daily_assignments'
 

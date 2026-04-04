@@ -1,14 +1,22 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 import sys
+import urllib.parse
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
+from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TAB_ICON_SVG_PATH = PROJECT_ROOT / "client" / "assets" / "tab_icon.svg"
+TAB_ICON_PNG_PATH = PROJECT_ROOT / "client" / "assets" / "tab_icon.png"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from client import auth_state
-from client.pages.login import render_login_page
+from client.pages.login import render_forced_password_change, render_login_page
 from client.pages.manager_dashboard import render_manager_dashboard
 from client.pages.supervisor_dashboard import render_supervisor_dashboard
 from client.pages.telesales_panel import render_telesales_panel
@@ -16,7 +24,7 @@ from client.pages.visitor_panel import render_visitor_panel
 from client.styles.neumorphism import inject_global_css, render_login_logo, role_badge_html
 from server.app.enums.roles import UserRole
 from server.app.repositories import user_repository
-from server.db.database import get_db_session
+from server.db.database import get_db
 from server.db.startup_seed import seed_if_empty
 
 VIEW_BY_ROLE = {
@@ -27,6 +35,7 @@ VIEW_BY_ROLE = {
 }
 
 
+# Contract: _get_query_view executes one deterministic step in the workflow.
 def _get_query_view() -> str | None:
     raw_value = st.query_params.get("view")
     if raw_value is None:
@@ -39,19 +48,18 @@ def _get_query_view() -> str | None:
     return normalized or None
 
 
+# Contract: _set_query_view executes one deterministic step in the workflow.
 def _set_query_view(view: str) -> None:
     st.query_params["view"] = view
 
 
+# Contract: _validate_current_user executes one deterministic step in the workflow.
 def _validate_current_user(user_payload: dict | None) -> dict | None:
     if not user_payload:
         return None
 
-    db = get_db_session()
-    try:
+    with get_db() as db:
         db_user = user_repository.get_user_by_id(db, int(user_payload["id"]))
-    finally:
-        db.close()
 
     if not db_user or not db_user.is_active:
         return None
@@ -64,9 +72,58 @@ def _validate_current_user(user_payload: dict | None) -> dict | None:
         "id": int(db_user.id),
         "username": str(db_user.username),
         "role": str(db_user.role),
+        "must_change_password": bool(getattr(db_user, "must_change_password", False)),
     }
 
 
+def _resolve_tab_icon():
+    # FIX: Prefer PNG for Streamlit tab favicon reliability across browsers.
+    if TAB_ICON_PNG_PATH.exists():
+        try:
+            return Image.open(TAB_ICON_PNG_PATH)
+        except OSError:
+            return str(TAB_ICON_PNG_PATH)
+    if TAB_ICON_SVG_PATH.exists():
+        return str(TAB_ICON_SVG_PATH)
+    return "\U0001F4E6"
+
+
+def _inject_svg_tab_icon_override() -> None:
+    # FIX: Force SVG favicon in browser head when Streamlit ignores direct SVG page_icon.
+    if not TAB_ICON_SVG_PATH.exists():
+        return
+    try:
+        svg_markup = TAB_ICON_SVG_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return
+    if not svg_markup:
+        return
+
+    encoded_svg = urllib.parse.quote(svg_markup, safe="")
+    components.html(
+        f"""
+        <script>
+            (function () {{
+                const doc = window.parent && window.parent.document;
+                if (!doc) return;
+                let link = doc.getElementById("bexlogix-favicon-svg");
+                if (!link) {{
+                    link = doc.createElement("link");
+                    link.id = "bexlogix-favicon-svg";
+                    link.rel = "icon";
+                    doc.head.appendChild(link);
+                }}
+                link.type = "image/svg+xml";
+                link.href = "data:image/svg+xml;charset=utf-8,{encoded_svg}";
+            }})();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
+# Contract: _render_topbar executes one deterministic step in the workflow.
 def _render_topbar(current_user: dict) -> bool:
     render_login_logo()
     spacer_col, user_col = st.columns([10.2, 1.8], gap="medium")
@@ -82,19 +139,36 @@ def _render_topbar(current_user: dict) -> bool:
             </div>""",
             unsafe_allow_html=True,
         )
-        if st.button("خروج", key="logout_topbar", use_container_width=True):
-            return True
+        logout_confirm = bool(st.session_state.get("logout_confirm", False))
+        if not logout_confirm:
+            if st.button("خروج", key="logout_topbar", use_container_width=True):
+                st.session_state["logout_confirm"] = True
+                st.rerun()
+            return False
+
+        st.warning("مطمئن هستید؟ جلسه شما پایان می‌یابد.")
+        c1, c2 = st.columns(2, gap="small")
+        with c1:
+            if st.button("بله، خروج", key="logout_topbar_yes", use_container_width=True):
+                st.session_state["logout_confirm"] = False
+                return True
+        with c2:
+            if st.button("انصراف", key="logout_topbar_cancel", use_container_width=True):
+                st.session_state["logout_confirm"] = False
+                st.rerun()
     return False
 
+# Contract: main executes one deterministic step in the workflow.
 def main() -> None:
     st.set_page_config(
         page_title="BexLogix",
         layout="wide",
-        page_icon="📦",
+        page_icon=_resolve_tab_icon(),
         initial_sidebar_state="collapsed",
     )
     seed_if_empty()
     inject_global_css()
+    _inject_svg_tab_icon_override()
 
     requested_view = _get_query_view()
     current_user = auth_state.get_current_user()
@@ -112,6 +186,12 @@ def main() -> None:
         return
 
     auth_state.touch_session()
+    expiry_warning = auth_state.get_session_expiry_warning()
+    if expiry_warning:
+        st.warning(expiry_warning)
+        if st.button("متوجه شدم", key="ack_session_warning"):
+            auth_state.acknowledge_session_expiry_warning()
+            st.rerun()
 
     role = current_user["role"]
     expected_view = VIEW_BY_ROLE.get(role)
@@ -122,6 +202,10 @@ def main() -> None:
     if requested_view != expected_view:
         _set_query_view(expected_view)
         st.rerun()
+
+    if bool(current_user.get("must_change_password")):
+        render_forced_password_change(current_user=current_user)
+        return
 
     if _render_topbar(current_user):
         auth_state.logout_user()

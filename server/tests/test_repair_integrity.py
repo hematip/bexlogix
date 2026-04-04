@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -8,6 +11,7 @@ from server.app.services import integrity_service, reconciliation_service
 from server.db.database import get_db_session
 
 
+# Contract: test_repair_known_integrity_blockers_contract executes one deterministic step in the workflow.
 @pytest.mark.integration
 def test_repair_known_integrity_blockers_contract() -> None:
     db = get_db_session()

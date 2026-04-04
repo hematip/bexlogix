@@ -7,6 +7,11 @@
 3. Run app:
    - `streamlit run client/streamlit_app.py`
 
+## Seed Data Regeneration
+- اگر فایل‌های `data/*.xlsx` در محیط شما موجود نبودند، قبل از اولین اجرا می‌توانید این دستور را بزنید:
+  - `python server/db/generate_sample_files.py`
+- در startup هم اگر فایل‌های seed لازم پیدا نشوند، سامانه آن‌ها را خودکار بازتولید می‌کند.
+
 ## Test Taxonomy
 - `unit`: منطق خالص و سریع (بدون side effect سنگین)
 - `service`: رفتار سرویس‌ها و flowهای domain

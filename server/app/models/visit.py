@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date, datetime, timezone
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
@@ -6,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from server.db.base import Base
 
 # Actual visit result for an assigned store
+# Contract: Visit defines a typed boundary and should remain behavior-stable.
 class Visit(Base):
     __tablename__ = 'visits'
 

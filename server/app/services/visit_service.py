@@ -1,8 +1,11 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
-from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError
+from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError, err
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.roles import UserRole
 from server.app.enums.visit_result import VisitResult
@@ -16,14 +19,16 @@ from server.app.repositories import (
 from server.app.services import scheduling_service, telesales_service
 
 
+# Contract: _assert_manager_user executes one deterministic step in the workflow.
 def _assert_manager_user(db: Session, user_id: int) -> None:
     user = user_repository.get_user_by_id(db, user_id)
     if not user:
-        raise ValidationError(f"User id {user_id} not found.")
+        raise ValidationError("کاربر مدیر پیدا نشد.")
     if user.role != UserRole.MANAGER.value:
-        raise AppPermissionError("Only manager users can finalize unsubmitted assignments.")
+        raise AppPermissionError(err("manager_only_finalize"))
 
 
+# Contract: submit_visit_result executes one deterministic step in the workflow.
 def submit_visit_result(
     db: Session,
     assignment_id: int,
@@ -35,23 +40,23 @@ def submit_visit_result(
     normalized_result = str(result or "").strip().lower()
     allowed_results = {item.value for item in VisitResult}
     if normalized_result not in allowed_results:
-        raise ValidationError(f"Invalid visit result: {result}")
+        raise ValidationError(err("invalid_visit_result"))
 
     assignment = assignment_repository.get_assignment_by_id(db, assignment_id)
     if not assignment:
-        raise ValidationError(f"Assignment id {assignment_id} not found.")
+        raise ValidationError("تخصیص موردنظر پیدا نشد.")
     if assignment.assignment_status != AssignmentStatus.PUBLISHED.value:
-        raise DomainError("Visit submission is allowed only for published assignments.")
+        raise DomainError(err("visit_only_published"))
 
     visitor_profile = visitor_repository.get_profile_by_id(db, assignment.visitor_id)
     if not visitor_profile:
-        raise ValidationError("Visitor profile linked to assignment was not found.")
+        raise ValidationError(err("visitor_profile_not_found"))
     if visitor_profile.user_id != visitor_user_id:
-        raise AppPermissionError("You can only submit visit results for your own assignments.")
+        raise AppPermissionError(err("visit_only_own_assignment"))
 
     existing_visit = visit_repository.get_visit_by_assignment_id(db, assignment.id)
     if existing_visit:
-        raise DomainError("Visit result is already submitted for this assignment.")
+        raise DomainError(err("visit_already_submitted"))
 
     visit_note = str(note or "").strip() or None
     visit_date = assignment.work_date if submitted_at is None else submitted_at.date()
@@ -93,6 +98,7 @@ def submit_visit_result(
         raise
 
 
+# Contract: finalize_unsubmitted_assignments executes one deterministic step in the workflow.
 def finalize_unsubmitted_assignments(db: Session, work_date: date, actor_user_id: int) -> int:
     _assert_manager_user(db, actor_user_id)
 

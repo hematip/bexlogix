@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import timedelta
 from typing import Iterable
 
@@ -11,12 +14,14 @@ from server.app.models.visit import Visit
 from server.app.services.constants import TELESALES_POSTPONE_DELAY_DAYS
 
 
+# Contract: _normalize_store_ids executes one deterministic step in the workflow.
 def _normalize_store_ids(store_ids: Iterable[int] | None) -> list[int]:
     if store_ids is None:
         return []
     return sorted({int(store_id) for store_id in store_ids})
 
 
+# Contract: repair_followup_store_mismatches executes one deterministic step in the workflow.
 def repair_followup_store_mismatches(db: Session, commit: bool = False) -> dict:
     """
     Repair rule:
@@ -61,6 +66,7 @@ def repair_followup_store_mismatches(db: Session, commit: bool = False) -> dict:
     }
 
 
+# Contract: repair_postpone_missing_open_followups executes one deterministic step in the workflow.
 def repair_postpone_missing_open_followups(db: Session, commit: bool = False) -> dict:
     """
     Open follow-up in current MVP:
@@ -133,6 +139,7 @@ def repair_postpone_missing_open_followups(db: Session, commit: bool = False) ->
     }
 
 
+# Contract: reconcile_schedule_queue_flags executes one deterministic step in the workflow.
 def reconcile_schedule_queue_flags(
     db: Session,
     store_ids: Iterable[int] | None = None,
@@ -228,6 +235,7 @@ def reconcile_schedule_queue_flags(
     }
 
 
+# Contract: repair_known_integrity_blockers executes one deterministic step in the workflow.
 def repair_known_integrity_blockers(db: Session) -> dict:
     """
     Runs targeted repairs for current known blocker types only.

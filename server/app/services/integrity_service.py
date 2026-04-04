@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date
 
 from sqlalchemy import func
@@ -17,6 +20,7 @@ from server.app.services import scheduling_service
 from server.app.services.constants import DEFAULT_DAILY_CAPACITY
 
 
+# Contract: _issue executes one deterministic step in the workflow.
 def _issue(check: str, message: str, rows: list[dict]) -> dict:
     return {
         "check": check,
@@ -26,10 +30,12 @@ def _issue(check: str, message: str, rows: list[dict]) -> dict:
     }
 
 
+# Contract: _empty_result executes one deterministic step in the workflow.
 def _empty_result() -> dict:
     return {"blockers": [], "warnings": []}
 
 
+# Contract: repair_missing_schedule_states executes one deterministic step in the workflow.
 def repair_missing_schedule_states(db: Session, baseline_date: date) -> int:
     """
     Safe repair utility:
@@ -38,6 +44,7 @@ def repair_missing_schedule_states(db: Session, baseline_date: date) -> int:
     return scheduling_service.ensure_store_schedule_state_rows(db, baseline_date)
 
 
+# Contract: check_duplicate_operational_rows executes one deterministic step in the workflow.
 def check_duplicate_operational_rows(db: Session) -> dict:
     result = _empty_result()
 
@@ -165,6 +172,7 @@ def check_duplicate_operational_rows(db: Session) -> dict:
     return result
 
 
+# Contract: check_followup_visit_store_consistency executes one deterministic step in the workflow.
 def check_followup_visit_store_consistency(db: Session) -> dict:
     result = _empty_result()
     mismatches = (
@@ -198,6 +206,7 @@ def check_followup_visit_store_consistency(db: Session) -> dict:
     return result
 
 
+# Contract: check_postpone_chain_consistency executes one deterministic step in the workflow.
 def check_postpone_chain_consistency(db: Session) -> dict:
     result = _empty_result()
     postponed_rows = (
@@ -237,6 +246,7 @@ def check_postpone_chain_consistency(db: Session) -> dict:
     return result
 
 
+# Contract: check_queue_flag_consistency executes one deterministic step in the workflow.
 def check_queue_flag_consistency(db: Session) -> dict:
     result = _empty_result()
 
@@ -298,6 +308,7 @@ def check_queue_flag_consistency(db: Session) -> dict:
     return result
 
 
+# Contract: check_published_assignments_vs_visits executes one deterministic step in the workflow.
 def check_published_assignments_vs_visits(db: Session, work_date: date) -> dict:
     result = _empty_result()
 
@@ -346,6 +357,7 @@ def check_published_assignments_vs_visits(db: Session, work_date: date) -> dict:
     return result
 
 
+# Contract: check_daily_status_routing_readiness executes one deterministic step in the workflow.
 def check_daily_status_routing_readiness(db: Session, work_date: date) -> dict:
     result = _empty_result()
 
@@ -456,6 +468,7 @@ def check_daily_status_routing_readiness(db: Session, work_date: date) -> dict:
     return result
 
 
+# Contract: run_integrity_report executes one deterministic step in the workflow.
 def run_integrity_report(db: Session, work_date: date, strict: bool = False) -> dict:
     report = {
         "work_date": work_date.isoformat(),

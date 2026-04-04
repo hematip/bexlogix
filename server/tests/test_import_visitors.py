@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +11,7 @@ from server.app.services.import_visitors_service import import_visitor_profiles_
 from server.db.database import get_db_session
 
 
+# Contract: test_import_visitors_sample_file executes one deterministic step in the workflow.
 @pytest.mark.smoke
 def test_import_visitors_sample_file() -> None:
     path = Path("data/visitors_sample_10.xlsx")

@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -12,6 +15,7 @@ from server.app.services import telesales_service, visit_service
 from server.db.database import get_db_session
 
 
+# Contract: test_visit_to_telesales_flow executes one deterministic step in the workflow.
 @pytest.mark.service
 def test_visit_to_telesales_flow() -> None:
     db = get_db_session()

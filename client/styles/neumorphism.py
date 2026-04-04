@@ -12,21 +12,21 @@ SURFACE = "#E8ECF1"
 SHADOW_DARK = "#ccd0d8"
 SHADOW_LIGHT = "#ffffff"
 TEXT_PRIMARY = "#2C3E50"
-TEXT_SECONDARY = "#6C7A89"
-ACCENT = "#5B7FFF"
+TEXT_SECONDARY = "#5A6878"  # FIX: [A11Y-01] WCAG contrast-compliant secondary text color.
+ACCENT = "#3D5FCC"  # FIX: [A11Y-01] WCAG contrast-compliant accent color.
 
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
-_WINDOWS_FONTS_DIR = Path("C:/Windows/Fonts")
 _GLOBAL_CSS_CACHE: str | None = None
 
 _STATUS_DISPLAY = {
-    "green": "سبز",
-    "yellow": "زرد",
-    "red": "قرمز",
-    "draft": "پیش‌نویس",
-    "published": "منتشرشده",
-    "completed": "تکمیل‌شده",
-    "skipped": "ردشده",
+    "green": "✓ سبز",  # FIX: [A11Y-03] Add icon + shape for color-blind safety.
+    "yellow": "! زرد",
+    "red": "✕ قرمز",
+    "draft": "○ پیش‌نویس",
+    "supervisor_approved": "◉ تأیید سرپرست",
+    "published": "● منتشرشده",
+    "completed": "✓ تکمیل‌شده",
+    "skipped": "✕ ردشده",
 }
 
 _ROLE_DISPLAY = {
@@ -37,86 +37,9 @@ _ROLE_DISPLAY = {
 }
 
 
-def _font_data_uri(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    suffix = path.suffix.lower()
-    mime = {
-        ".ttf": "font/ttf",
-        ".otf": "font/otf",
-        ".woff": "font/woff",
-        ".woff2": "font/woff2",
-    }.get(suffix)
-    if not mime:
-        return None
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:{mime};base64,{encoded}"
-
-
-def _find_first_existing(paths: list[Path]) -> Path | None:
-    for path in paths:
-        if path.exists():
-            return path
-    return None
-
-
-def _build_font_face_css() -> str:
-    regular_font = _find_first_existing(
-        [
-            _ASSETS_DIR / "fonts" / "IRANSansFaNum-Regular.ttf",
-            _ASSETS_DIR / "fonts" / "IRANSansFaNum.ttf",
-            _WINDOWS_FONTS_DIR / "IRANSans(FaNum).ttf",
-            _WINDOWS_FONTS_DIR / "IRANSans FaNum.ttf",
-            _WINDOWS_FONTS_DIR / "IRAN Sans.ttf",
-        ]
-    )
-    bold_font = _find_first_existing(
-        [
-            _ASSETS_DIR / "fonts" / "IRANSansFaNum-Bold.ttf",
-            _WINDOWS_FONTS_DIR / "IRANSans(FaNum) Bold.ttf",
-            _WINDOWS_FONTS_DIR / "IRANSans FaNum Bold.ttf",
-            _WINDOWS_FONTS_DIR / "IRAN Sans Bold.ttf",
-        ]
-    )
-
-    regular_uri = _font_data_uri(regular_font) if regular_font else None
-    bold_uri = _font_data_uri(bold_font) if bold_font else None
-
-    regular_src = (
-        f"url('{regular_uri}') format('truetype')"
-        if regular_uri
-        else "local('IRANSans FaNum'), local('IRANSans(FaNum)'), local('IRAN Sans')"
-    )
-    bold_src = (
-        f"url('{bold_uri}') format('truetype')"
-        if bold_uri
-        else "local('IRANSans FaNum Bold'), local('IRANSans(FaNum) Bold'), local('IRAN Sans Bold')"
-    )
-
-    return f"""
-@font-face {{
-    font-family: 'IRANSansFaNum';
-    src: {regular_src};
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-}}
-@font-face {{
-    font-family: 'IRANSansFaNum';
-    src: {bold_src};
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-}}
-"""
-
-
 def _build_global_css() -> str:
-    font_face_css = _build_font_face_css()
     return f"""
 <style>
-{font_face_css}
-
 :root {{
     --bex-bg: {BG};
     --bex-surface: {SURFACE};
@@ -143,26 +66,32 @@ th,
 td,
 p,
 li {{
-    font-family: 'IRANSansFaNum', 'IRANSans FaNum', 'IRAN Sans', 'Tahoma', 'Segoe UI', sans-serif !important;
+    font-family: 'Vazirmatn', 'IRANSansFaNum', 'IRANSans FaNum', 'IRAN Sans', 'Tahoma', 'Segoe UI', sans-serif !important;
 }}
 
+/* FIX: Ensure dropdown/date popovers also use Persian font stack. */
+[data-baseweb="select"] *,
+[data-baseweb="popover"] *,
+[role="listbox"] *,
+[role="option"],
+[data-testid="stPopover"] * {{
+    font-family: 'Vazirmatn', 'IRANSansFaNum', 'IRANSans FaNum', 'IRAN Sans', 'Tahoma', 'Segoe UI', sans-serif !important;
+}}
+
+/* FIX: Keep material ligature icons rendered as icons, not raw keyboard_arrow_down text. */
 .material-symbols-rounded,
 .material-symbols-outlined,
 .material-icons,
-[class*="material-symbols"] {{
-    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
-    font-style: normal !important;
+[data-testid="stExpanderToggleIcon"] * {{
+    font-family: 'Material Symbols Rounded' !important;
     font-weight: normal !important;
-    font-size: 20px !important;
-    line-height: 1 !important;
+    font-style: normal !important;
+    font-size: 24px !important;
     letter-spacing: normal !important;
     text-transform: none !important;
     white-space: nowrap !important;
     direction: ltr !important;
-    display: inline-block !important;
-    -webkit-font-feature-settings: 'liga';
-    -webkit-font-smoothing: antialiased;
-    font-feature-settings: 'liga';
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
 }}
 
 html,
@@ -218,6 +147,30 @@ section[data-testid="stSidebar"],
     text-align: right;
 }}
 
+.jalali-selected-caption {{
+    margin: 0.25rem 0 0.65rem;
+    color: var(--bex-text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.7;
+    text-align: right !important;
+    direction: rtl !important;
+}}
+
+/* FIX: Keep today's shortcut compact and aligned to the right side. */
+div[class*="st-key-"][class*="_today_shortcut"] {{
+    display: flex !important;
+    justify-content: flex-end !important;
+}}
+div[class*="st-key-"][class*="_today_shortcut"] > div {{
+    width: auto !important;
+}}
+div[class*="st-key-"][class*="_today_shortcut"] button {{
+    width: auto !important;
+    min-width: 118px !important;
+    padding-left: 0.9rem !important;
+    padding-right: 0.9rem !important;
+}}
+
 .app-user-mini {{
     display: flex;
     flex-direction: column;
@@ -226,12 +179,12 @@ section[data-testid="stSidebar"],
     gap: 0.3rem;
     background: var(--bex-bg);
     border-radius: 12px;
-    padding: 0.52rem 0.55rem;
+    padding: 0.45rem 0.5rem;
     box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light);
     margin-top: 0;
     margin-bottom: 0.45rem;
     width: 100%;
-    min-width: 165px;
+    min-width: 140px;
     max-width: 100%;
     box-sizing: border-box;
 }}
@@ -254,56 +207,23 @@ section[data-testid="stSidebar"],
     line-height: 1.1;
 }}
 
-.st-key-logout_topbar {{
-    width: 100%;
-    max-width: 100%;
-}}
-
-.st-key-logout_topbar > div {{
-    width: 100%;
-}}
-
 .st-key-logout_topbar button {{
     width: 100% !important;
-    min-width: 165px !important;
+    min-width: 140px !important;
     margin: 0 !important;
     box-sizing: border-box !important;
 }}
 
-.main-logo {{
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin: 0.35rem 0 1rem;
-}}
-
-.main-logo-shell {{
-    display: inline-block;
-    align-items: center;
-    justify-content: center;
-    width: auto;
-    max-width: max-content;
-    padding: 0.38rem 0.6rem;
-    border-radius: 14px;
-    background: var(--bex-bg);
-    box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light);
-}}
-
-.main-logo img {{
-    max-width: 320px;
-    display: block;
-    height: auto;
-}}
-
+.main-logo,
 .login-logo {{
     display: flex;
     justify-content: center;
     align-items: center;
-    width: 100%;
     margin: 0.65rem auto 1rem;
-    overflow: visible !important;
+    width: 100%;
 }}
 
+.main-logo-shell,
 .login-logo-shell {{
     display: inline-block;
     width: auto;
@@ -314,6 +234,7 @@ section[data-testid="stSidebar"],
     box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light);
 }}
 
+.main-logo img,
 .login-logo img {{
     max-width: 320px;
     display: block;
@@ -341,7 +262,7 @@ section[data-testid="stSidebar"],
 
 .login-footer-powered {{
     text-align: center;
-    color: #9CA3AF;
+    color: #7a8492;
     font-size: 0.78rem;
     margin-top: 1.2rem;
 }}
@@ -357,11 +278,123 @@ section[data-testid="stSidebar"],
 
 .panel-description-columns {{
     margin: 0 0 0.85rem;
-    color: #7d916f;
+    color: #607c5d;
     font-size: 0.88rem;
     line-height: 1.8;
     text-align: right !important;
     direction: rtl !important;
+}}
+
+/* FIX: [UX-06] Ordered checklist alignment in pipeline status box. */
+.pipeline-checklist-left,
+.pipeline-checklist-right {{
+    direction: rtl !important;
+    text-align: right !important;
+    line-height: 2 !important;
+    font-size: 0.96rem !important;
+    color: var(--bex-text-primary) !important;
+    padding: 0.2rem 0.35rem 0.35rem 0.25rem;
+    width: 100% !important;
+}}
+
+[data-testid="stStatusWidget"] [data-testid="stMarkdownContainer"] {{
+    direction: rtl !important;
+    text-align: right !important;
+}}
+
+.pipeline-progress-wrap {{
+    direction: rtl !important;
+    text-align: right !important;
+    margin-top: 0.3rem;
+}}
+
+.pipeline-progress-label {{
+    font-size: 0.92rem;
+    color: var(--bex-text-primary);
+    margin-bottom: 0.2rem;
+    font-weight: 700;
+}}
+
+.pipeline-progress-track {{
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: #d8dde5;
+    position: relative;
+    overflow: hidden;
+    direction: rtl !important;
+}}
+
+.pipeline-progress-fill {{
+    position: absolute;
+    right: 0;
+    left: auto;
+    top: 0;
+    bottom: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #3D5FCC 0%, #6f87d7 100%);
+    transform-origin: right center;
+    transition: width 240ms ease;
+}}
+
+.pipeline-progress-note {{
+    direction: rtl !important;
+    text-align: right !important;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--bex-text-secondary);
+    line-height: 1.8;
+}}
+
+/* FIX: [UX-09] Visitor progress must be RTL with right-aligned note text. */
+.visitor-progress-wrap {{
+    direction: rtl !important;
+    text-align: right !important;
+    margin: 0.3rem 0 0.9rem;
+}}
+
+.visitor-progress-track {{
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: #d8dde5;
+    position: relative;
+    overflow: hidden;
+    direction: rtl !important;
+}}
+
+.visitor-progress-fill {{
+    position: absolute;
+    right: 0;
+    left: auto;
+    top: 0;
+    bottom: 0;
+    border-radius: 999px;
+    transform-origin: right center;
+    transition: width 240ms ease;
+}}
+
+.visitor-progress-note {{
+    margin-top: 0.45rem;
+    color: var(--bex-text-secondary);
+    font-size: 0.92rem;
+    font-weight: 600;
+    text-align: right !important;
+    direction: rtl !important;
+}}
+
+.hourglass-spin {{
+    display: inline-block;
+    animation: hourglass-wobble 1.1s ease-in-out infinite;
+    transform-origin: center;
+}}
+
+@keyframes hourglass-wobble {{
+    0% {{ transform: rotate(0deg) scale(1); }}
+    25% {{ transform: rotate(-18deg) scale(1.05); }}
+    50% {{ transform: rotate(0deg) scale(1); }}
+    75% {{ transform: rotate(18deg) scale(1.05); }}
+    100% {{ transform: rotate(0deg) scale(1); }}
 }}
 
 .ltr-inline {{
@@ -418,8 +451,15 @@ section[data-testid="stSidebar"],
 .neu-metric .metric-label {{
     font-size: 0.9rem;
     font-weight: 500;
-    color: var(--bex-text-secondary);
+    color: var(--bex-text-primary); /* FIX: [A11Y-01] Use primary color for metric labels. */
     margin-top: 0.35rem;
+}}
+
+.neu-kpi-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.9rem;
+    margin-bottom: 0.8rem;
 }}
 
 div.stButton > button,
@@ -429,12 +469,13 @@ div.stDownloadButton > button {{
     border-radius: 12px !important;
     box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light) !important;
     font-weight: 600 !important;
+    min-height: 44px !important; /* FIX: [A11Y-05] Minimum touch target. */
 }}
 
 div.stButton > button {{
     background: var(--bex-bg) !important;
     color: var(--bex-text-primary) !important;
-    padding: 0.55rem 1.6rem !important;
+    padding: 0.55rem 1.2rem !important;
 }}
 
 div.stFormSubmitButton > button {{
@@ -474,21 +515,11 @@ textarea {{
 [data-testid="stFileUploaderDropzone"] {{
     direction: rtl !important;
     text-align: right !important;
+    min-height: 44px !important; /* FIX: [A11Y-05] Minimum touch target for upload zone. */
 }}
 
 [data-testid="stFileUploaderDropzone"] button {{
-    direction: rtl !important;
-    text-align: center !important;
-}}
-
-[data-testid="stFileUploaderDropzone"] button * {{
-    display: none !important;
-}}
-
-[data-testid="stFileUploaderDropzone"] button::after {{
-    content: "آپلود فایل";
-    display: inline-block;
-    font-weight: 700;
+    min-height: 44px !important;
 }}
 
 details[data-testid="stExpander"] {{
@@ -505,48 +536,9 @@ details[data-testid="stExpander"] summary {{
     font-size: 1.08rem !important;
 }}
 
-details[data-testid="stExpander"] summary [data-testid="stMarkdownContainer"],
-details[data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] * {{
-    direction: rtl !important;
-    text-align: right !important;
-    font-size: 1.08rem !important;
-}}
-
-details[data-testid="stExpander"] summary > div:first-child,
-details[data-testid="stExpander"] summary > span:first-child,
-details[data-testid="stExpander"] summary [aria-hidden="true"] {{
-    display: none !important;
-}}
-
-[data-testid="stExpanderToggleIcon"],
-[data-testid="stExpanderToggleIcon"] *,
-details[data-testid="stExpander"] summary [data-testid="stExpanderIcon"],
-details[data-testid="stExpander"] summary [data-testid*="Expander"][data-testid*="Icon"],
-details[data-testid="stExpander"] summary .material-symbols-rounded,
-details[data-testid="stExpander"] summary .material-symbols-outlined,
-details[data-testid="stExpander"] summary .material-icons,
-details[data-testid="stExpander"] summary .notranslate {{
-    display: none !important;
-    width: 0 !important;
-    min-width: 0 !important;
-    height: 0 !important;
-    overflow: hidden !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-}}
-
-details[data-testid="stExpander"] summary::-webkit-details-marker {{
-    display: none !important;
-}}
-
-details[data-testid="stExpander"] summary::marker {{
-    content: "" !important;
-}}
-
-[data-baseweb="select"] *:not(.material-icons):not(.material-symbols-rounded):not(.material-symbols-outlined),
-[role="listbox"] *:not(.material-icons):not(.material-symbols-rounded):not(.material-symbols-outlined),
-[data-baseweb="popover"] *:not(.material-icons):not(.material-symbols-rounded):not(.material-symbols-outlined) {{
-    font-family: 'IRANSansFaNum', 'IRANSans FaNum', 'IRAN Sans', 'Tahoma', 'Segoe UI', sans-serif !important;
+/* FIX: [A11Y-02] Expander icon is intentionally visible for accessibility. */
+[data-testid="stExpanderToggleIcon"] {{
+    display: inline-flex !important;
 }}
 
 details[data-testid="stExpander"] [data-testid="stCaptionContainer"],
@@ -576,7 +568,7 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
     padding: 0.22rem 0.7rem;
     border-radius: 20px;
     font-size: 0.78rem;
-    font-weight: 600;
+    font-weight: 700;
 }}
 
 .badge-green  {{ background: #d4edda; color: #155724; }}
@@ -584,6 +576,7 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
 .badge-red    {{ background: #f8d7da; color: #721c24; }}
 .badge-gray   {{ background: #e2e3e5; color: #383d41; }}
 .badge-draft     {{ background: #e2e3e5; color: #383d41; }}
+.badge-supervisor-approved {{ background: #e0e7ff; color: #3730a3; }}
 .badge-published {{ background: #cce5ff; color: #004085; }}
 .badge-completed {{ background: #d4edda; color: #155724; }}
 .badge-skipped   {{ background: #f8d7da; color: #721c24; }}
@@ -636,6 +629,16 @@ footer {{ visibility: hidden; }}
 
 
 def inject_global_css() -> None:
+    # FIX: [ARCH-05] Load robust Persian font via CDN with local IRANSans fallback.
+    st.markdown(
+        '<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">',
+        unsafe_allow_html=True,
+    )
+
     global _GLOBAL_CSS_CACHE
     if _GLOBAL_CSS_CACHE is None:
         _GLOBAL_CSS_CACHE = _build_global_css()
@@ -697,6 +700,20 @@ def neu_metric(label: str, value: str | int | float) -> None:
     )
 
 
+def render_metric_grid(items: list[tuple[str, str | int | float]]) -> None:
+    # FIX: [A11Y-04] Responsive KPI grid replacing fixed 5-column layout.
+    tiles = []
+    for label, value in items:
+        tiles.append(
+            f"""<div class="neu-metric">
+                <div class="metric-value">{value}</div>
+                <div class="metric-label">{label}</div>
+            </div>"""
+        )
+    html_block = '<div class="neu-kpi-grid">' + "".join(tiles) + "</div>"
+    st.markdown(html_block, unsafe_allow_html=True)
+
+
 def neu_section_header(title: str) -> None:
     st.markdown(f'<div class="section-header">{title}</div>', unsafe_allow_html=True)
 
@@ -720,6 +737,7 @@ def status_badge(text: str) -> str:
         "yellow": "badge-yellow",
         "red": "badge-red",
         "draft": "badge-draft",
+        "supervisor_approved": "badge-supervisor-approved",
         "published": "badge-published",
         "completed": "badge-completed",
         "skipped": "badge-skipped",

@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 import html
@@ -11,6 +14,7 @@ import streamlit.components.v1 as components
 from server.app.services import routing_service
 
 
+# Contract: _to_py_scalar executes one deterministic step in the workflow.
 def _to_py_scalar(value):
     if value is None:
         return None
@@ -27,6 +31,7 @@ def _to_py_scalar(value):
     return str(value)
 
 
+# Contract: _extract_start_point executes one deterministic step in the workflow.
 def _extract_start_point(
     stops_df: pd.DataFrame,
     start_lat: float | None,
@@ -47,6 +52,7 @@ def _extract_start_point(
     return None
 
 
+# Contract: _build_straight_path executes one deterministic step in the workflow.
 def _build_straight_path(
     start_point: tuple[float, float] | None,
     ordered_points: pd.DataFrame,
@@ -60,6 +66,7 @@ def _build_straight_path(
     return path_points
 
 
+# Contract: _build_route_geometry_path executes one deterministic step in the workflow.
 def _build_route_geometry_path(
     start_point: tuple[float, float] | None,
     ordered_points: pd.DataFrame,
@@ -87,6 +94,7 @@ def _build_route_geometry_path(
     return _build_straight_path(start_point, ordered_points)
 
 
+# Contract: _build_marker_rows executes one deterministic step in the workflow.
 def _build_marker_rows(store_points: pd.DataFrame) -> list[dict]:
     rows: list[dict] = []
     for _, row in store_points.iterrows():
@@ -105,6 +113,7 @@ def _build_marker_rows(store_points: pd.DataFrame) -> list[dict]:
     return rows
 
 
+# Contract: _render_leaflet_map executes one deterministic step in the workflow.
 def _render_leaflet_map(
     marker_rows: list[dict],
     path_points_lon_lat: list[list[float]],
@@ -180,7 +189,7 @@ def _render_leaflet_map(
 
         if (Array.isArray(payload.path) && payload.path.length > 1) {{
           L.polyline(payload.path, {{
-            color: "#5B7FFF",
+            color: "#3D5FCC",
             weight: 4,
             opacity: 0.85
           }}).addTo(map);
@@ -190,7 +199,7 @@ def _render_leaflet_map(
           L.circleMarker(payload.start, {{
             radius: 8,
             color: "#2563EB",
-            fillColor: "#5B7FFF",
+            fillColor: "#3D5FCC",
             fillOpacity: 1,
             weight: 2
           }}).addTo(map).bindPopup("نقطه شروع ویزیتور");
@@ -222,7 +231,7 @@ def _render_leaflet_map(
 
           const routeOrderText = m.route_order === null || m.route_order === undefined ? "—" : String(m.route_order);
           const popupHtml =
-            '<div style="direction:rtl;text-align:right;font-family:Tahoma,Arial,sans-serif;line-height:1.8;">' +
+            '<div style="direction:rtl;text-align:right;font-family:Vazirmatn,IRANSansFaNum,IRANSans FaNum,IRAN Sans,Tahoma,Arial,sans-serif;line-height:1.8;">' +
             '<b>فروشگاه:</b> ' + String(m.store_code || "") + ' — ' + String(m.store_name || "") + '<br/>' +
             '<b>ترتیب مسیر:</b> ' + routeOrderText + '<br/>' +
             '<b>وضعیت:</b> ' + String(m.assignment_status || "—") +
@@ -239,6 +248,7 @@ def _render_leaflet_map(
     components.html(html_block, height=520)
 
 
+# Contract: render_route_map executes one deterministic step in the workflow.
 def render_route_map(
     stops_df: pd.DataFrame,
     start_lat: float | None = None,
@@ -281,7 +291,7 @@ def render_route_map(
     )
 
     st.markdown(
-        """<div style="display:flex;gap:1.5rem;margin-top:0.5rem;font-size:0.82rem;color:#6C7A89;flex-wrap:wrap;">
+        """<div style="display:flex;gap:1.5rem;margin-top:0.5rem;font-size:0.82rem;color:#5A6878;flex-wrap:wrap;">
             <span>🔵 نقطه شروع ویزیتور</span>
             <span>🔴 فروشگاه‌های تخصیص‌یافته</span>
             <span>🔷 مسیر پیشنهادی (مسیر جاده‌ای)</span>

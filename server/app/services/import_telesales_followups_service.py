@@ -1,9 +1,13 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from server.app.errors import err
 from server.app.enums.contact_status import ContactStatus
 from server.app.enums.telesales_outcome import TelesalesOutcome
 from server.app.models.store import Store
@@ -21,23 +25,27 @@ REQUIRED_TELESALES_FOLLOWUP_COLUMNS = {
 }
 
 
+# Contract: read_telesales_followups_excel executes one deterministic step in the workflow.
 def read_telesales_followups_excel(file_path: str | Path) -> pd.DataFrame:
     return pd.read_excel(file_path)
 
 
+# Contract: normalize_column_names executes one deterministic step in the workflow.
 def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [str(col).strip().lower() for col in df.columns]
     return df
 
 
+# Contract: validate_telesales_followup_columns executes one deterministic step in the workflow.
 def validate_telesales_followup_columns(df: pd.DataFrame) -> None:
     missing_columns = set(REQUIRED_TELESALES_FOLLOWUP_COLUMNS) - set(df.columns)
     if missing_columns:
         missing_str = ", ".join(sorted(missing_columns))
-        raise ValueError(f"Missing required columns: {missing_str}")
+        raise ValueError(err("missing_required_columns", columns=missing_str))
 
 
+# Contract: transform_telesales_followup_dataframe executes one deterministic step in the workflow.
 def transform_telesales_followup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["followup_date"] = pd.to_datetime(df["followup_date"], errors="coerce").dt.date
@@ -49,30 +57,31 @@ def transform_telesales_followup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Contract: validate_telesales_followup_values executes one deterministic step in the workflow.
 def validate_telesales_followup_values(df: pd.DataFrame, db: Session) -> None:
     errors: list[str] = []
 
     invalid_dates = df[df["followup_date"].isna()]
     if not invalid_dates.empty:
-        errors.append("followup_date contains invalid values.")
+        errors.append("مقدار followup_date در برخی ردیف‌ها نامعتبر است.")
 
     invalid_visit_ids = df[df["visit_id"].isna()]
     if not invalid_visit_ids.empty:
-        errors.append("visit_id must be numeric.")
+        errors.append("visit_id باید عددی باشد.")
 
     duplicate_pairs = df[df.duplicated(subset=["visit_id", "followup_date"], keep=False)]
     for idx in duplicate_pairs.index:
-        errors.append(f"Row {idx + 2}: duplicate (visit_id, followup_date) found in file.")
+        errors.append(f"ردیف {idx + 2}: مقدار تکراری (visit_id, followup_date) در فایل وجود دارد.")
 
     valid_contact_statuses = {item.value for item in ContactStatus}
     invalid_contact_statuses = sorted(set(df["contact_status"]) - valid_contact_statuses)
     if invalid_contact_statuses:
-        errors.append(f"Invalid contact_status values: {', '.join(invalid_contact_statuses)}")
+        errors.append(err("invalid_contact_status_values", values=", ".join(invalid_contact_statuses)))
 
     valid_results = {item.value for item in TelesalesOutcome}
     invalid_results = sorted(set(df["result"]) - valid_results)
     if invalid_results:
-        errors.append(f"Invalid result values: {', '.join(invalid_results)}")
+        errors.append(err("invalid_followup_result_values", values=", ".join(invalid_results)))
 
     store_codes = set(df["store_code"].tolist())
     existing_store_codes = {
@@ -85,7 +94,7 @@ def validate_telesales_followup_values(df: pd.DataFrame, db: Session) -> None:
     }
     unknown_store_codes = sorted(store_codes - existing_store_codes)
     if unknown_store_codes:
-        errors.append(f"Unknown store_code values: {', '.join(unknown_store_codes)}")
+        errors.append(err("unknown_store_codes", store_codes=", ".join(unknown_store_codes)))
 
     visit_ids = set(int(visit_id) for visit_id in df["visit_id"].dropna().tolist())
     existing_visit_ids = {
@@ -98,7 +107,7 @@ def validate_telesales_followup_values(df: pd.DataFrame, db: Session) -> None:
     }
     unknown_visit_ids = sorted(visit_ids - existing_visit_ids)
     if unknown_visit_ids:
-        errors.append(f"Unknown visit_id values: {', '.join(str(v) for v in unknown_visit_ids)}")
+        errors.append(err("unknown_visit_ids", visit_ids=", ".join(str(v) for v in unknown_visit_ids)))
 
     store_rows = (
         db.query(Store.id, Store.store_code)
@@ -129,13 +138,14 @@ def validate_telesales_followup_values(df: pd.DataFrame, db: Session) -> None:
         actual_store_id = store_code_to_id[store_code]
         if actual_store_id != expected_store_id:
             errors.append(
-                f"Row {idx + 2}: store_code '{store_code}' does not match visit_id {visit_id} store."
+                f"ردیف {idx + 2}: store_code «{store_code}» با فروشگاه مرتبط با visit_id={visit_id} هم‌خوان نیست."
             )
 
     if errors:
         raise ValueError("\n".join(sorted(set(errors))))
 
 
+# Contract: upsert_telesales_followups executes one deterministic step in the workflow.
 def upsert_telesales_followups(df: pd.DataFrame, db: Session) -> int:
     store_rows = db.query(Store.id, Store.store_code).all()
     store_code_to_id = {store_code: store_id for store_id, store_code in store_rows}
@@ -182,6 +192,7 @@ def upsert_telesales_followups(df: pd.DataFrame, db: Session) -> int:
         raise
 
 
+# Contract: import_telesales_followups_from_excel executes one deterministic step in the workflow.
 def import_telesales_followups_from_excel(
     file_path: str | Path,
     db: Session,
@@ -189,7 +200,7 @@ def import_telesales_followups_from_excel(
 ) -> int:
     if not allow_backfill_mode:
         raise ValueError(
-            "Telesales followup import is backfill-only and disabled in normal MVP operations."
+            "در نسخه فعلی، import پیگیری فروش تلفنی فقط برای بک‌فیل فعال است و در عملیات روزانه مجاز نیست."
         )
 
     df = read_telesales_followups_excel(file_path)

@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date, datetime, timezone
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
@@ -6,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from server.db.base import Base
 
 # Follow-up record created for red visits
+# Contract: TelesalesFollowup defines a typed boundary and should remain behavior-stable.
 class TelesalesFollowup(Base):
     __tablename__ = 'telesales_followups'
 

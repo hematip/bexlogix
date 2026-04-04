@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from __future__ import annotations
 
 from datetime import date
@@ -8,6 +11,7 @@ import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
+USERS_SAMPLE_PATH = DATA_DIR / "users_seed_sample_10_visitors.xlsx"
 STORE_SAMPLE_PATH = DATA_DIR / "stores_sample_300.xlsx"
 VISITOR_SAMPLE_PATH = DATA_DIR / "visitors_sample_10.xlsx"
 DAILY_STATUS_SAMPLE_PATH = DATA_DIR / "daily_visitor_status_sample_10.xlsx"
@@ -17,6 +21,26 @@ STORE_COUNT = 300
 VISITOR_COUNT = 10
 
 
+# Contract: _build_users executes one deterministic step in the workflow.
+def _build_users() -> pd.DataFrame:
+    rows = [
+        {"username": "manager1", "password": "change_me", "role": "manager", "is_active": True},
+        {"username": "supervisor1", "password": "change_me", "role": "supervisor", "is_active": True},
+        {"username": "telesales1", "password": "change_me", "role": "telesales", "is_active": True},
+    ]
+    for index in range(1, VISITOR_COUNT + 1):
+        rows.append(
+            {
+                "username": f"visitor{index}",
+                "password": "change_me",
+                "role": "visitor",
+                "is_active": True,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+# Contract: _build_stores executes one deterministic step in the workflow.
 def _build_stores() -> pd.DataFrame:
     rng = Random(20260401)
     regions = ["مرکز", "شمال", "جنوب", "شرق", "غرب"]
@@ -48,6 +72,7 @@ def _build_stores() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# Contract: _build_visitors executes one deterministic step in the workflow.
 def _build_visitors() -> pd.DataFrame:
     rows: list[dict] = []
     for index in range(1, VISITOR_COUNT + 1):
@@ -66,6 +91,7 @@ def _build_visitors() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# Contract: _build_daily_status executes one deterministic step in the workflow.
 def _build_daily_status(work_date_iso: str) -> pd.DataFrame:
     rows: list[dict] = []
     for index in range(1, VISITOR_COUNT + 1):
@@ -84,15 +110,18 @@ def _build_daily_status(work_date_iso: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# Contract: generate_sample_files executes one deterministic step in the workflow.
 def generate_sample_files() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     today_iso = date.today().isoformat()
+    _build_users().to_excel(USERS_SAMPLE_PATH, index=False)
     _build_stores().to_excel(STORE_SAMPLE_PATH, index=False)
     _build_visitors().to_excel(VISITOR_SAMPLE_PATH, index=False)
     _build_daily_status(today_iso).to_excel(DAILY_STATUS_SAMPLE_PATH, index=False)
     _build_daily_status(today_iso).to_excel(DAILY_STATUS_TEMPLATE_PATH, index=False)
 
+    print(f"Users seed written: {USERS_SAMPLE_PATH} (13 rows)")
     print(f"Stores sample written: {STORE_SAMPLE_PATH} ({STORE_COUNT} rows)")
     print(f"Visitors sample written: {VISITOR_SAMPLE_PATH} ({VISITOR_COUNT} rows)")
     print(f"Daily status sample written: {DAILY_STATUS_SAMPLE_PATH} ({VISITOR_COUNT} rows)")

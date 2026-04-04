@@ -1,7 +1,11 @@
 # Python cache
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+*.pyd
+*.log
 
 # Virtual environments
 venv/
@@ -24,17 +28,27 @@ Thumbs.db
 
 # Test / coverage
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
 .coverage
+.coverage.*
 htmlcov/
 
 # Excel temporary files
 ~$*.xlsx
+data/*.xlsx
+data/*.xls
 
 # Keep sample data if needed, but ignore customer/local raw files
 data/raw/
 data/tmp/
+docs/audit/tmp/
 
 # My personal docs
 ERD.md
 BexLogix.docx
 README_LOCAL.md
+
+# Streamlit local secrets (machine-specific)
+.streamlit/secrets.toml

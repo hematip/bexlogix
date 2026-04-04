@@ -1,3 +1,6 @@
+# Purpose: Python module in BexLogix project.
+# Workflow Role: Supports operational planning and execution flow.
+
 from datetime import date
 from io import BytesIO
 
@@ -14,8 +17,9 @@ from server.app.models.visitor_profile import VisitorProfile
 from server.app.services import scheduling_service
 
 
+# Contract: get_daily_kpis executes one deterministic step in the workflow.
 def get_daily_kpis(db: Session, work_date: date) -> dict:
-    due_stores = len(scheduling_service.get_due_store_ids(db, work_date))
+    due_stores = len(scheduling_service.get_due_store_ids_readonly(db, work_date))
 
     assigned_stores = (
         db.query(DailyAssignment)
@@ -79,6 +83,7 @@ def get_daily_kpis(db: Session, work_date: date) -> dict:
     }
 
 
+# Contract: export_visitor_route_excel executes one deterministic step in the workflow.
 def export_visitor_route_excel(db: Session, work_date: date, visitor_id: int) -> BytesIO:
     rows = (
         db.query(DailyAssignment, Store, VisitorProfile)
@@ -122,6 +127,7 @@ def export_visitor_route_excel(db: Session, work_date: date, visitor_id: int) ->
     return output
 
 
+# Contract: export_manager_daily_summary_excel executes one deterministic step in the workflow.
 def export_manager_daily_summary_excel(db: Session, work_date: date) -> BytesIO:
     kpis = get_daily_kpis(db, work_date)
     kpi_df = pd.DataFrame([kpis])

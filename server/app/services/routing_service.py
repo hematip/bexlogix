@@ -300,20 +300,19 @@ def fetch_osrm_route_geometry(
     if not resolved_base_url:
         return []
 
+    # FIX: If full OSRM route call fails, still try per-segment OSRM requests before falling back to straight lines.
+    timeout = (
+        float(timeout_seconds)
+        if timeout_seconds is not None
+        else float(config.OSRM_TIMEOUT_SECONDS)
+    )
+    points = [(float(start_lat), float(start_lon))] + [
+        (float(stop["lat"]), float(stop["lon"])) for stop in ordered_stops
+    ]
+    if len(points) < 2:
+        return []
+
     try:
-        # FIX: Use route geometry on full path first, then per-segment fallback for better street adherence.
-        timeout = (
-            float(timeout_seconds)
-            if timeout_seconds is not None
-            else float(config.OSRM_TIMEOUT_SECONDS)
-        )
-
-        points = [(float(start_lat), float(start_lon))] + [
-            (float(stop["lat"]), float(stop["lon"])) for stop in ordered_stops
-        ]
-        if len(points) < 2:
-            return []
-
         encoded_coords = _build_osrm_coordinate_segment(points)
         url = (
             f"{resolved_base_url}/route/v1/driving/{encoded_coords}"
@@ -323,28 +322,30 @@ def fetch_osrm_route_geometry(
         geometry = _extract_route_geometry(payload)
         if len(geometry) >= 2:
             return geometry
+    except Exception:
+        pass
 
-        # Segment fallback: request each leg to avoid long-request failures on large routes.
-        segment_geometry: list[list[float]] = []
-        for idx in range(len(points) - 1):
-            leg_points = [points[idx], points[idx + 1]]
-            leg_encoded = _build_osrm_coordinate_segment(leg_points)
-            leg_url = (
-                f"{resolved_base_url}/route/v1/driving/{leg_encoded}"
-                "?overview=full&steps=false&geometries=geojson"
-            )
+    segment_geometry: list[list[float]] = []
+    for idx in range(len(points) - 1):
+        leg_points = [points[idx], points[idx + 1]]
+        leg_encoded = _build_osrm_coordinate_segment(leg_points)
+        leg_url = (
+            f"{resolved_base_url}/route/v1/driving/{leg_encoded}"
+            "?overview=full&steps=false&geometries=geojson"
+        )
+        try:
             leg_payload = _request_osrm_payload(url=leg_url, timeout_seconds=timeout)
             leg_geometry = _extract_route_geometry(leg_payload)
-            if not leg_geometry:
-                continue
-            if segment_geometry and leg_geometry and segment_geometry[-1] == leg_geometry[0]:
-                segment_geometry.extend(leg_geometry[1:])
-            else:
-                segment_geometry.extend(leg_geometry)
+        except Exception:
+            leg_geometry = []
+        if not leg_geometry:
+            continue
+        if segment_geometry and segment_geometry[-1] == leg_geometry[0]:
+            segment_geometry.extend(leg_geometry[1:])
+        else:
+            segment_geometry.extend(leg_geometry)
 
-        return segment_geometry
-    except Exception:
-        return []
+    return segment_geometry
 
 
 # Contract: _get_start_point executes one deterministic step in the workflow.

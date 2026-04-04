@@ -1,3 +1,8 @@
+"""Unit tests for scheduling interval matrix and overdue-day rules."""
+
+# Purpose: Verify store visit-frequency matrix and overdue edge-case behavior.
+# Workflow Role: Guards scenario-critical scheduling policy from regressions.
+
 from __future__ import annotations
 
 from datetime import date
@@ -9,6 +14,7 @@ from server.app.services import scheduling_service
 
 
 def _store_for_interval(grade: str, confectionery: bool, oil: bool, pasta: bool) -> Store:
+    # Contract: Builds an in-memory store object with selected category flags.
     return Store(
         store_code=f"S-{grade}-{int(confectionery)}{int(oil)}{int(pasta)}",
         store_name="Test Store",
@@ -46,6 +52,7 @@ def _store_for_interval(grade: str, confectionery: bool, oil: bool, pasta: bool)
     ],
 )
 def test_get_store_visit_interval_days_matrix(grade: str, category: str, expected: int) -> None:
+    # Contract: Interval output must match scenario matrix for each grade/category.
     store = _store_for_interval(
         grade=grade,
         confectionery=category == "confectionery",
@@ -57,15 +64,16 @@ def test_get_store_visit_interval_days_matrix(grade: str, category: str, expecte
 
 @pytest.mark.unit
 def test_get_store_visit_interval_days_uses_shortest_for_multi_category() -> None:
+    # Contract: Multi-category stores should use the shortest required interval.
     store = _store_for_interval(grade="B", confectionery=True, oil=False, pasta=True)
     assert scheduling_service.get_store_visit_interval_days(store) == 8
 
 
 @pytest.mark.unit
 def test_compute_overdue_days_edge_cases() -> None:
+    # Contract: Overdue calculation must clamp negative/future cases to zero.
     target = date(2026, 4, 3)
     assert scheduling_service.compute_overdue_days(None, target) == 0
     assert scheduling_service.compute_overdue_days(date(2026, 4, 3), target) == 0
     assert scheduling_service.compute_overdue_days(date(2026, 4, 5), target) == 0
     assert scheduling_service.compute_overdue_days(date(2026, 3, 28), target) == 6
-

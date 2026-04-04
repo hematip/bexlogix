@@ -1,3 +1,8 @@
+"""Integration tests for supervisor route-approval and manager publish flow."""
+
+# Purpose: Validate role-based publish chain behavior for assignments.
+# Workflow Role: Ensures draft -> supervisor-approved -> published transitions are enforced.
+
 from __future__ import annotations
 
 from datetime import date
@@ -15,6 +20,7 @@ from server.app.services import assignment_service
 
 @pytest.mark.integration
 def test_supervisor_approval_required_before_manager_publish(db) -> None:
+    # Contract: Verifies manager publish blocks until supervisor approval exists.
     manager = User(username="manager1", password_hash="h", role=UserRole.MANAGER.value, is_active=True)
     supervisor = User(username="supervisor1", password_hash="h", role=UserRole.SUPERVISOR.value, is_active=True)
     visitor_user = User(username="visitor1", password_hash="h", role=UserRole.VISITOR.value, is_active=True)
@@ -82,4 +88,3 @@ def test_supervisor_approval_required_before_manager_publish(db) -> None:
     saved = db.query(DailyAssignment).filter(DailyAssignment.work_date == work_date).first()
     assert saved is not None
     assert saved.assignment_status == AssignmentStatus.PUBLISHED.value
-

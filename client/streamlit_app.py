@@ -2,15 +2,12 @@
 # Workflow Role: Supports operational planning and execution flow.
 
 import sys
-import urllib.parse
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TAB_ICON_SVG_PATH = PROJECT_ROOT / "client" / "assets" / "tab_icon.svg"
 TAB_ICON_PNG_PATH = PROJECT_ROOT / "client" / "assets" / "tab_icon.png"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
@@ -77,50 +74,13 @@ def _validate_current_user(user_payload: dict | None) -> dict | None:
 
 
 def _resolve_tab_icon():
-    # FIX: Prefer PNG for Streamlit tab favicon reliability across browsers.
+    # FIX: Use a single PNG favicon for stable browser tab rendering.
     if TAB_ICON_PNG_PATH.exists():
         try:
             return Image.open(TAB_ICON_PNG_PATH)
         except OSError:
             return str(TAB_ICON_PNG_PATH)
-    if TAB_ICON_SVG_PATH.exists():
-        return str(TAB_ICON_SVG_PATH)
     return "\U0001F4E6"
-
-
-def _inject_svg_tab_icon_override() -> None:
-    # FIX: Force SVG favicon in browser head when Streamlit ignores direct SVG page_icon.
-    if not TAB_ICON_SVG_PATH.exists():
-        return
-    try:
-        svg_markup = TAB_ICON_SVG_PATH.read_text(encoding="utf-8").strip()
-    except OSError:
-        return
-    if not svg_markup:
-        return
-
-    encoded_svg = urllib.parse.quote(svg_markup, safe="")
-    components.html(
-        f"""
-        <script>
-            (function () {{
-                const doc = window.parent && window.parent.document;
-                if (!doc) return;
-                let link = doc.getElementById("bexlogix-favicon-svg");
-                if (!link) {{
-                    link = doc.createElement("link");
-                    link.id = "bexlogix-favicon-svg";
-                    link.rel = "icon";
-                    doc.head.appendChild(link);
-                }}
-                link.type = "image/svg+xml";
-                link.href = "data:image/svg+xml;charset=utf-8,{encoded_svg}";
-            }})();
-        </script>
-        """,
-        height=0,
-        width=0,
-    )
 
 
 # Contract: _render_topbar executes one deterministic step in the workflow.
@@ -168,7 +128,6 @@ def main() -> None:
     )
     seed_if_empty()
     inject_global_css()
-    _inject_svg_tab_icon_override()
 
     requested_view = _get_query_view()
     current_user = auth_state.get_current_user()

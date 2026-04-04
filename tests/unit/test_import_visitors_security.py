@@ -1,3 +1,8 @@
+"""Unit tests for secure temporary-password behavior in visitor import."""
+
+# Purpose: Validate security defaults for imported visitor accounts.
+# Workflow Role: Ensures temp credentials are generated when not provided.
+
 from __future__ import annotations
 
 import pandas as pd
@@ -8,6 +13,7 @@ from server.app.services import import_visitors_service
 
 @pytest.mark.unit
 def test_import_visitors_generates_temp_password_when_missing(db) -> None:
+    # Contract: Import should produce at least one generated secure temp password.
     df = pd.DataFrame(
         [
             {
@@ -30,4 +36,3 @@ def test_import_visitors_generates_temp_password_when_missing(db) -> None:
     assert result["processed_count"] == 1
     assert "visitor-new" in result["generated_temp_passwords"]
     assert len(result["generated_temp_passwords"]["visitor-new"]) >= 12
-

@@ -1,3 +1,8 @@
+"""Shared pytest fixtures for isolated local test execution."""
+
+# Purpose: Central pytest fixture definitions for test suite stability.
+# Workflow Role: Builds per-test in-memory database sessions for deterministic tests.
+
 from __future__ import annotations
 
 import sys

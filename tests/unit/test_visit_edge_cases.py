@@ -1,3 +1,8 @@
+"""Unit tests for visit submission edge cases and red-followup behavior."""
+
+# Purpose: Validate critical visit-domain edge cases with clear expected outcomes.
+# Workflow Role: Protects red-result handoff into telesales follow-up queue.
+
 from __future__ import annotations
 
 from datetime import date
@@ -17,6 +22,7 @@ from server.app.services import scheduling_service, visit_service
 
 @pytest.mark.unit
 def test_store_without_active_category_raises_clear_error() -> None:
+    # Contract: Store with no active category must raise clear scheduling error.
     store = Store(
         store_code="STR-000",
         store_name="Store 000",
@@ -37,6 +43,7 @@ def test_store_without_active_category_raises_clear_error() -> None:
 
 @pytest.mark.unit
 def test_red_visit_creates_followup_for_next_working_day(db) -> None:
+    # Contract: Red visit should always create a follow-up on/after next working day.
     visitor_user = User(
         username="visitor-test",
         password_hash="hash",
@@ -96,4 +103,3 @@ def test_red_visit_creates_followup_for_next_working_day(db) -> None:
     followup = db.query(TelesalesFollowup).filter(TelesalesFollowup.visit_id.is_not(None)).first()
     assert followup is not None
     assert followup.followup_date >= friday
-

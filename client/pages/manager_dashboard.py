@@ -12,6 +12,7 @@ import streamlit as st
 
 from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
+from client.components.rtl_table import render_rtl_table
 from client.components.route_map import render_route_map
 from client.styles.neumorphism import neu_section_header, render_metric_grid, render_page_title
 from server.app.services import (
@@ -279,8 +280,8 @@ def _render_pipeline_result(result: dict) -> None:
 
     render_metric_grid(
         [
-            ("مسافت مبنای قبلی (km)", quality["baseline_km"]),
-            ("مسافت فعلی (km)", quality["current_km"]),
+            ("مسافت مسیر مبنا (قبل از بهینه‌سازی) (km)", quality["baseline_km"]),
+            ("مسافت مسیر فعلی (بعد از بهینه‌سازی) (km)", quality["current_km"]),
             ("درصد بهبود مسیر", f"{quality['improvement_pct']}%"),
             ("گیت کیفیت", gate_text),
         ]
@@ -524,19 +525,39 @@ def render_manager_dashboard(current_user: dict) -> None:
     if assignment_df.empty:
         st.info(get_empty_state_message(role="manager", context="no_assignments"))
     else:
-        st.dataframe(assignment_df, use_container_width=True)
+        assignment_view_df = assignment_df.copy()
+        # FIX: Show store grade in manager-generated assignment list for route review.
+        if "store_grade" in assignment_view_df.columns:
+            assignment_view_df["store_grade"] = assignment_view_df["store_grade"].fillna("نامشخص")
+        render_rtl_table(
+            assignment_view_df,
+            key_prefix=f"manager_assignments_{work_date_iso}",
+        )
 
     neu_section_header("صف در انتظار تماس تلفنی")
     if pending_queue:
-        st.dataframe(pd.DataFrame(pending_queue), use_container_width=True)
+        pending_df = pd.DataFrame(pending_queue)
+        pending_df = pending_df.drop(columns=["store_lat", "store_lon"], errors="ignore")
+        render_rtl_table(
+            pending_df,
+            key_prefix=f"manager_pending_telesales_{work_date_iso}",
+        )
     else:
         st.info(get_empty_state_message(role="manager", context="no_pending_telesales"))
 
     visitor_options = _cached_visitor_options(work_date_iso)
     neu_section_header("نقشه مسیر")
+    st.markdown(
+        '<div class="panel-description" style="text-align:right !important;margin:0.1rem 0 0.35rem;">'
+        "راهنما: در همین کادر انتخاب ویزیتور می‌توانید جست‌وجو کنید (نمونه: VIS-001 یا visitor1)."
+        "</div>",
+        unsafe_allow_html=True,
+    )
     selected_code = st.selectbox(
         "انتخاب ویزیتور برای نمایش نقشه و دانلود مسیر",
-        options=[""] + list(visitor_options.keys()),
+        options=list(visitor_options.keys()),
+        index=None,
+        placeholder="ویزیتور را انتخاب یا جست‌وجو کنید...",
         key=f"manager_map_visitor_{work_date_iso}",
     )
 

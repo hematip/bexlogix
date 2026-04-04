@@ -104,6 +104,33 @@ def _render_visit_progress(completed_count: int, total_stops: int) -> float:
     return progress_ratio
 
 
+def _render_grade_distribution(assignments_df: pd.DataFrame) -> None:
+    # FIX: Show per-grade store counts in visitor panel (VIP, A+, A, B, C).
+    if "store_grade" not in assignments_df.columns:
+        return
+
+    order = ["VIP", "A+", "A", "B", "C"]
+    counts = (
+        assignments_df["store_grade"]
+        .fillna("نامشخص")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .value_counts()
+        .to_dict()
+    )
+    parts = [f"{int(counts[g])} {g}" for g in order if int(counts.get(g, 0)) > 0]
+    unknown_count = int(sum(v for k, v in counts.items() if k not in set(order)))
+    if unknown_count > 0:
+        parts.append(f"{unknown_count} نامشخص")
+
+    if parts:
+        st.markdown(
+            f'<div class="panel-description"><strong>ترکیب گرید فروشگاه‌های مسیر:</strong> {" | ".join(parts)}</div>',
+            unsafe_allow_html=True,
+        )
+
+
 def render_visitor_panel(current_user: dict) -> None:
     render_page_title("مسیر من")
     profile = _cached_visitor_profile(current_user["id"])
@@ -137,6 +164,7 @@ def render_visitor_panel(current_user: dict) -> None:
             ("مسافت مسیر (km)", f"{max_distance:.1f}"),
         ]
     )
+    _render_grade_distribution(assignments_df)
     progress_ratio = _render_visit_progress(completed_count=completed_count, total_stops=total_stops)
     if progress_ratio >= 1:
         st.success("همه توقف‌ها کامل شد. مسیر امروز با موفقیت پایان یافت.")

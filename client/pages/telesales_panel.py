@@ -12,6 +12,7 @@ import streamlit as st
 
 from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
+from client.components.rtl_table import render_rtl_table
 from client.styles.neumorphism import neu_metric, neu_section_header, render_page_title
 from server.app.enums.contact_status import ContactStatus
 from server.app.enums.telesales_outcome import TelesalesOutcome
@@ -124,7 +125,11 @@ def render_telesales_panel(current_user: dict) -> None:
             for item in page_items
         ]
     )
-    st.dataframe(queue_df, use_container_width=True)
+    render_rtl_table(
+        queue_df,
+        key_prefix=f"telesales_queue_{as_of_date.isoformat()}_{page}",
+        max_height_px=340,
+    )
 
     neu_section_header("ثبت نتیجه پیگیری")
     for item in page_items:

@@ -512,6 +512,48 @@ textarea {{
     text-align: start !important;
 }}
 
+/* FIX: Standardize checkbox spacing/alignment for confirmation rows. */
+[data-testid="stCheckbox"] {{
+    direction: rtl !important;
+    text-align: right !important;
+    margin-top: 0.2rem !important;
+}}
+[data-testid="stCheckbox"] > label {{
+    direction: rtl !important;
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    column-gap: 0.45rem !important;
+    row-gap: 0 !important;
+    min-height: 40px !important;
+    line-height: 1.8 !important;
+    padding-right: 0.25rem !important;
+    cursor: pointer !important;
+}}
+[data-testid="stCheckbox"] input[type="checkbox"] {{
+    width: 18px !important;
+    height: 18px !important;
+    margin: 0 !important;
+}}
+[data-testid="stCheckbox"] > label > div:last-child {{
+    margin-right: 0.18rem !important;
+}}
+[data-testid="stCheckbox"] span {{
+    margin: 0 !important;
+}}
+
+/* FIX: Selectbox search must auto-switch direction (Persian RTL / English LTR). */
+[data-baseweb="select"] input {{
+    direction: auto !important;
+    unicode-bidi: plaintext !important;
+    text-align: start !important;
+}}
+[data-baseweb="select"] input::placeholder {{
+    direction: rtl !important;
+    text-align: right !important;
+}}
+
 [data-testid="stFileUploaderDropzone"] {{
     direction: rtl !important;
     text-align: right !important;
@@ -561,6 +603,24 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
     border-radius: 12px !important;
     overflow: hidden;
     box-shadow: 3px 3px 8px var(--bex-shadow-dark), -3px -3px 8px var(--bex-shadow-light) !important;
+}}
+
+/* FIX: Center all dataframe cells/headers and keep Persian-friendly visual alignment. */
+[data-testid="stDataFrame"] [role="grid"] {{
+    direction: rtl !important;
+}}
+
+[data-testid="stDataFrame"] [role="columnheader"],
+[data-testid="stDataFrame"] [role="gridcell"] {{
+    text-align: center !important;
+    justify-content: center !important;
+    align-items: center !important;
+}}
+
+[data-testid="stDataFrame"] [role="columnheader"] div,
+[data-testid="stDataFrame"] [role="gridcell"] div {{
+    width: 100% !important;
+    text-align: center !important;
 }}
 
 .badge {{

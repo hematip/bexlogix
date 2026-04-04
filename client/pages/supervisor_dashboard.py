@@ -11,6 +11,7 @@ import streamlit as st
 
 from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
+from client.components.rtl_table import render_rtl_table
 from client.components.route_map import render_route_map
 from client.styles.neumorphism import neu_section_header, render_metric_grid, render_page_title
 from server.app.services import dashboard_query_service, reporting_export_service, telesales_service
@@ -103,9 +104,17 @@ def render_supervisor_dashboard(current_user: dict) -> None:
     )
 
     neu_section_header("بررسی مسیر ویزیتورها")
+    st.markdown(
+        '<div class="panel-description" style="text-align:right !important;margin:0.1rem 0 0.35rem;">'
+        "راهنما: در همین کادر انتخاب ویزیتور می‌توانید جست‌وجو کنید."
+        "</div>",
+        unsafe_allow_html=True,
+    )
     selected_code = st.selectbox(
         "انتخاب ویزیتور",
         options=[_ALL_VISITORS_OPTION] + list(visitor_options.keys()),
+        index=0,
+        placeholder="ویزیتور را انتخاب یا جست‌وجو کنید...",
         key=f"supervisor_select_{work_date_iso}",
     )
 
@@ -113,14 +122,20 @@ def render_supervisor_dashboard(current_user: dict) -> None:
         if assignment_df.empty:
             st.info(get_empty_state_message(role="supervisor", context="no_assignments"))
         else:
-            st.dataframe(assignment_df, use_container_width=True)
+            render_rtl_table(
+                assignment_df,
+                key_prefix=f"supervisor_assignments_all_{work_date_iso}",
+            )
     else:
         selected_id = visitor_options[selected_code]
         filtered_df = assignment_df[assignment_df["visitor_code"] == selected_code]
         if filtered_df.empty:
             st.info(get_empty_state_message(role="supervisor", context="no_assignments"))
         else:
-            st.dataframe(filtered_df, use_container_width=True)
+            render_rtl_table(
+                filtered_df,
+                key_prefix=f"supervisor_assignments_{selected_code}_{work_date_iso}",
+            )
 
         route_df = _cached_route_map_data(work_date_iso, selected_id)
         if not route_df.empty:
@@ -160,10 +175,18 @@ def render_supervisor_dashboard(current_user: dict) -> None:
     if visit_df.empty:
         st.info(get_empty_state_message(role="supervisor", context="no_visits"))
     else:
-        st.dataframe(visit_df, use_container_width=True)
+        render_rtl_table(
+            visit_df,
+            key_prefix=f"supervisor_visits_{work_date_iso}",
+        )
 
     neu_section_header("صف فروش تلفنی")
     if pending_queue:
-        st.dataframe(pd.DataFrame(pending_queue), use_container_width=True)
+        pending_df = pd.DataFrame(pending_queue)
+        pending_df = pending_df.drop(columns=["store_lat", "store_lon"], errors="ignore")
+        render_rtl_table(
+            pending_df,
+            key_prefix=f"supervisor_telesales_{work_date_iso}",
+        )
     else:
         st.info(get_empty_state_message(role="supervisor", context="no_telesales"))

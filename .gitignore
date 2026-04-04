@@ -50,5 +50,11 @@ ERD.md
 BexLogix.docx
 README_LOCAL.md
 
+# Local markdown docs (do not push)
+BexLogix.md
+BexLogix_Comprehensive_Technical_Product_Specification.md
+docs/**/*.md
+docs/audit/legacy-tests/
+
 # Streamlit local secrets (machine-specific)
 .streamlit/secrets.toml

@@ -1,3 +1,8 @@
+"""Working-day utilities for Persian business calendar rules."""
+
+# Purpose: Calendar helper module for business-day validation.
+# Workflow Role: Provides non-working day rules used by follow-up scheduling.
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -21,10 +26,12 @@ _FIXED_HOLIDAYS_JALALI: dict[int, set[tuple[int, int]]] = {
 
 
 def _to_jalali(g_date: date) -> jdatetime.date:
+    # Contract: _to_jalali executes one deterministic step in the workflow.
     return jdatetime.date.fromgregorian(date=g_date)
 
 
 def is_working_day(g_date: date) -> bool:
+    # Contract: is_working_day executes one deterministic step in the workflow.
     jalali = _to_jalali(g_date)
     # Friday is non-working day in Iran (weekday(): Saturday=0 ... Friday=6).
     if jalali.weekday() == 6:
@@ -37,8 +44,8 @@ def is_working_day(g_date: date) -> bool:
 
 
 def get_next_working_day(base_date: date) -> date:
+    # Contract: get_next_working_day executes one deterministic step in the workflow.
     candidate = base_date
     while not is_working_day(candidate):
         candidate = candidate + timedelta(days=1)
     return candidate
-

@@ -21,7 +21,7 @@ from client.styles.neumorphism import (
 )
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.visit_result import VisitResult
-from server.app.services import dashboard_query_service, reporting_export_service, visit_service
+from server.app.services import dashboard_query_service, reporting_export_service, runtime_health_service, visit_service
 from server.db.database import get_db
 
 RESULT_COLORS = {
@@ -170,7 +170,19 @@ def render_visitor_panel(current_user: dict) -> None:
         st.success("همه توقف‌ها کامل شد. مسیر امروز با موفقیت پایان یافت.")
 
     neu_section_header("نقشه مسیر")
-    render_route_map(assignments_df)
+    runtime_state = runtime_health_service.get_offline_runtime_status()
+    if (not bool(runtime_state.get("osrm_up", False))) or (not bool(runtime_state.get("tiles_up", False))):
+        st.info("حالت کاهشی فعال است: اگر سرویس محلی در دسترس نباشد، نقشه بدون خیابان یا با مسیر خطی نمایش داده می‌شود.")
+    if not bool(runtime_state.get("osrm_data_ready", False)):
+        st.warning("فایل داده OSRM پیدا نشد (offline/osrm/data/tehran-latest.osrm).")
+    if not bool(runtime_state.get("tiles_data_ready", False)):
+        st.warning("فایل MBTiles پیدا نشد (offline/tiles/data/*.mbtiles).")
+    # FIX: [PERF-04] Reuse page-level runtime health state in map renderer.
+    render_route_map(
+        assignments_df,
+        runtime_status=runtime_state,
+        show_runtime_messages=False,
+    )
 
     with get_db() as db:
         route_buf = reporting_export_service.export_visitor_route_excel(

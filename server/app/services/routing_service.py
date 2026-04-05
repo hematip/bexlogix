@@ -1,12 +1,14 @@
-# Purpose: Python module in BexLogix project.
-# Workflow Role: Supports operational planning and execution flow.
+# Purpose: Route planning service with OSRM optimization and deterministic fallback.
+# Workflow Role: Computes route order and map geometry for daily visitor assignments.
 
 from __future__ import annotations
 
 import json
+import socket
 from dataclasses import dataclass
 from datetime import date
 from math import asin, cos, radians, sin, sqrt
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -15,6 +17,7 @@ from sqlalchemy.orm import Session
 from server.app import config
 from server.app.errors import DomainError, err
 from server.app.repositories import assignment_repository, visitor_repository
+from server.app.services import runtime_health_service
 
 
 # Contract: RouteStop defines a typed boundary and should remain behavior-stable.
@@ -40,6 +43,10 @@ class RoutePlanner:
     def last_plan_mode(self) -> str:
         # FIX: [UX-07] Expose planner mode metadata for transparency (osrm vs fallback).
         return "nn"
+
+    @property
+    def last_fallback_reason(self) -> str | None:
+        return None
 
 
 # Contract: _haversine_km executes one deterministic step in the workflow.
@@ -137,6 +144,10 @@ class NearestNeighborRoutePlanner(RoutePlanner):
     def last_plan_mode(self) -> str:
         return "nn"
 
+    @property
+    def last_fallback_reason(self) -> str | None:
+        return "osrm_unavailable"
+
 
 # Contract: OSRMRoutePlanner defines a typed boundary and should remain behavior-stable.
 class OSRMRoutePlanner(RoutePlanner):
@@ -146,6 +157,7 @@ class OSRMRoutePlanner(RoutePlanner):
         base_url: str | None = None,
         timeout_seconds: float | None = None,
         fallback_planner: RoutePlanner | None = None,
+        runtime_status: dict[str, object] | None = None,
     ) -> None:
         self.base_url = (base_url or config.OSRM_BASE_URL or "").strip().rstrip("/")
         self.timeout_seconds = (
@@ -155,6 +167,14 @@ class OSRMRoutePlanner(RoutePlanner):
         )
         self.fallback_planner = fallback_planner or NearestNeighborRoutePlanner()
         self._last_plan_mode = "nn"
+        self._last_fallback_reason: str | None = None
+        self._runtime_status_override = dict(runtime_status) if runtime_status else None
+
+    # Contract: _is_osrm_available executes one deterministic step in the workflow.
+    def _is_osrm_available(self) -> bool:
+        if self._runtime_status_override is not None:
+            return bool(self._runtime_status_override.get("osrm_up", False))
+        return bool(runtime_health_service.get_offline_runtime_status().get("osrm_up", False))
 
     # Contract: _build_trip_url executes one deterministic step in the workflow.
     def _build_trip_url(
@@ -170,7 +190,8 @@ class OSRMRoutePlanner(RoutePlanner):
 
         return (
             f"{self.base_url}/trip/v1/driving/{encoded_coords}"
-            "?source=first&roundtrip=false&overview=false&steps=false&geometries=geojson"
+            # FIX: [OSRM-01] destination=last is required when roundtrip=false.
+            "?source=first&destination=last&roundtrip=false&overview=false&steps=false&geometries=geojson"
         )
 
     # Contract: _request_trip_payload executes one deterministic step in the workflow.
@@ -239,13 +260,21 @@ class OSRMRoutePlanner(RoutePlanner):
         stops: list[dict],
     ) -> list[RouteStop]:
         if not stops:
+            self._last_fallback_reason = None
             return []
 
         if start_lat is None or start_lon is None:
             self._last_plan_mode = "nn"
+            self._last_fallback_reason = "osrm_unavailable"
             return self.fallback_planner.plan_route(start_lat, start_lon, stops)
         if not self.base_url:
             self._last_plan_mode = "nn"
+            self._last_fallback_reason = "osrm_unavailable"
+            return self.fallback_planner.plan_route(start_lat, start_lon, stops)
+        # FIX: [PERF-02] Fail-fast in offline mode when local OSRM service is unavailable.
+        if not self._is_osrm_available():
+            self._last_plan_mode = "nn"
+            self._last_fallback_reason = "osrm_unavailable"
             return self.fallback_planner.plan_route(start_lat, start_lon, stops)
 
         try:
@@ -255,14 +284,40 @@ class OSRMRoutePlanner(RoutePlanner):
             if not planned or len(planned) != len(stops):
                 raise ValueError("OSRM planning was incomplete.")
             self._last_plan_mode = "osrm"
+            self._last_fallback_reason = None
             return planned
-        except Exception:
+        except Exception as exc:
             self._last_plan_mode = "nn"
+            self._last_fallback_reason = _map_osrm_failure_reason(exc)
             return self.fallback_planner.plan_route(start_lat, start_lon, stops)
 
     @property
     def last_plan_mode(self) -> str:
         return self._last_plan_mode
+
+    @property
+    def last_fallback_reason(self) -> str | None:
+        return self._last_fallback_reason
+
+
+# Contract: _map_osrm_failure_reason executes one deterministic step in the workflow.
+def _map_osrm_failure_reason(exc: Exception) -> str:
+    if isinstance(exc, ValueError):
+        return "osrm_invalid_response"
+    if isinstance(exc, TimeoutError):
+        return "osrm_timeout"
+    if isinstance(exc, socket.timeout):
+        return "osrm_timeout"
+    if isinstance(exc, HTTPError):
+        return "osrm_invalid_response"
+    if isinstance(exc, URLError):
+        reason = getattr(exc, "reason", None)
+        if isinstance(reason, TimeoutError) or isinstance(reason, socket.timeout):
+            return "osrm_timeout"
+        if reason and "timed out" in str(reason).lower():
+            return "osrm_timeout"
+        return "osrm_unavailable"
+    return "osrm_invalid_response"
 
 
 # Contract: fetch_osrm_route_geometry executes one deterministic step in the workflow.
@@ -292,6 +347,8 @@ def fetch_osrm_route_geometry(
     ordered_stops: list[dict],
     base_url: str | None = None,
     timeout_seconds: float | None = None,
+    runtime_status: dict[str, object] | None = None,
+    allow_segment_fallback: bool = False,
 ) -> list[list[float]]:
     if start_lat is None or start_lon is None or not ordered_stops:
         return []
@@ -300,7 +357,13 @@ def fetch_osrm_route_geometry(
     if not resolved_base_url:
         return []
 
-    # FIX: If full OSRM route call fails, still try per-segment OSRM requests before falling back to straight lines.
+    resolved_runtime_status = (
+        dict(runtime_status) if runtime_status is not None else runtime_health_service.get_offline_runtime_status()
+    )
+    # FIX: [PERF-02] Do not issue any OSRM HTTP request when health circuit reports service down.
+    if not bool(resolved_runtime_status.get("osrm_up", False)):
+        return []
+
     timeout = (
         float(timeout_seconds)
         if timeout_seconds is not None
@@ -322,9 +385,13 @@ def fetch_osrm_route_geometry(
         geometry = _extract_route_geometry(payload)
         if len(geometry) >= 2:
             return geometry
+        if not allow_segment_fallback:
+            return []
     except Exception:
-        pass
+        if not allow_segment_fallback:
+            return []
 
+    # FIX: [PERF-02] Optional per-leg fallback is disabled by default to avoid heavy latency.
     segment_geometry: list[list[float]] = []
     for idx in range(len(points) - 1):
         leg_points = [points[idx], points[idx + 1]]
@@ -363,7 +430,7 @@ def apply_route_order_for_visitor(
     work_date: date,
     visitor_id: int,
     planner: RoutePlanner,
-) -> tuple[int, str]:
+) -> tuple[int, str, str | None]:
     published_exists = assignment_repository.count_published_assignments_for_visitor_date(
         db=db,
         work_date=work_date,
@@ -378,7 +445,7 @@ def apply_route_order_for_visitor(
         visitor_id=visitor_id,
     )
     if not assignments:
-        return 0, "nn"
+        return 0, "nn", None
 
     start_lat, start_lon = _get_start_point(db, work_date, visitor_id)
     stops = [
@@ -403,7 +470,11 @@ def apply_route_order_for_visitor(
             assignment.route_distance_km = planned.route_distance_km
 
         db.commit()
-        return len(planned_stops), str(getattr(planner, "last_plan_mode", "nn"))
+        return (
+            len(planned_stops),
+            str(getattr(planner, "last_plan_mode", "nn")),
+            getattr(planner, "last_fallback_reason", None),
+        )
     except Exception:
         db.rollback()
         raise
@@ -419,8 +490,13 @@ def apply_routes_for_work_date(db: Session, work_date: date, planner: RoutePlann
     processed_count = 0
     osrm_routed = 0
     nn_routed = 0
+    fallback_reasons: dict[str, int] = {
+        "osrm_unavailable": 0,
+        "osrm_timeout": 0,
+        "osrm_invalid_response": 0,
+    }
     for visitor_id in visitor_ids:
-        visitor_count, mode = apply_route_order_for_visitor(
+        visitor_count, mode, fallback_reason = apply_route_order_for_visitor(
             db=db,
             work_date=work_date,
             visitor_id=visitor_id,
@@ -431,6 +507,16 @@ def apply_routes_for_work_date(db: Session, work_date: date, planner: RoutePlann
             osrm_routed += 1
         else:
             nn_routed += 1
+            if fallback_reason in fallback_reasons:
+                fallback_reasons[str(fallback_reason)] += 1
+            elif fallback_reason:
+                fallback_reasons["osrm_invalid_response"] += 1
+
+    fallback_reason = None
+    if nn_routed > 0:
+        fallback_reason = max(fallback_reasons.items(), key=lambda item: item[1])[0]
+        if fallback_reasons.get(fallback_reason, 0) <= 0:
+            fallback_reason = "osrm_unavailable"
 
     return {
         "total_assignments": int(processed_count),
@@ -438,4 +524,6 @@ def apply_routes_for_work_date(db: Session, work_date: date, planner: RoutePlann
         "osrm_routed": int(osrm_routed),
         "nn_routed": int(nn_routed),
         "osrm_used": bool(osrm_routed > 0),
+        "fallback_reason": fallback_reason,
+        "fallback_reason_counts": fallback_reasons,
     }

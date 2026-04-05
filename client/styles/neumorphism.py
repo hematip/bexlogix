@@ -1,3 +1,5 @@
+# Purpose: Global neumorphic design system and UI helper registry.
+# Workflow Role: Provides reusable styling primitives across all Streamlit pages.
 """White Neumorphism design system for BexLogix Streamlit UI."""
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ TEXT_SECONDARY = "#5A6878"  # FIX: [A11Y-01] WCAG contrast-compliant secondary t
 ACCENT = "#3D5FCC"  # FIX: [A11Y-01] WCAG contrast-compliant accent color.
 
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+_FONTS_DIR = _ASSETS_DIR / "fonts"
 _GLOBAL_CSS_CACHE: str | None = None
 
 _STATUS_DISPLAY = {
@@ -37,9 +40,36 @@ _ROLE_DISPLAY = {
 }
 
 
+def _build_local_font_face_css() -> str:
+    # FIX: [OFFLINE-02] Load Persian fonts from local assets and remove runtime CDN dependency.
+    font_defs: list[str] = []
+    candidates = [
+        ("400", "Vazirmatn-Regular.ttf"),
+        ("700", "Vazirmatn-Bold.ttf"),
+    ]
+    for weight, filename in candidates:
+        font_path = _FONTS_DIR / filename
+        if not font_path.exists():
+            continue
+        encoded = base64.b64encode(font_path.read_bytes()).decode("ascii")
+        font_defs.append(
+            f"""
+@font-face {{
+    font-family: 'Vazirmatn';
+    font-style: normal;
+    font-weight: {weight};
+    src: url(data:font/ttf;base64,{encoded}) format('truetype');
+    font-display: swap;
+}}"""
+        )
+    return "".join(font_defs)
+
+
 def _build_global_css() -> str:
+    font_face_css = _build_local_font_face_css()
     return f"""
 <style>
+{font_face_css}
 :root {{
     --bex-bg: {BG};
     --bex-surface: {SURFACE};
@@ -78,20 +108,28 @@ li {{
     font-family: 'Vazirmatn', 'IRANSansFaNum', 'IRANSans FaNum', 'IRAN Sans', 'Tahoma', 'Segoe UI', sans-serif !important;
 }}
 
-/* FIX: Keep material ligature icons rendered as icons, not raw keyboard_arrow_down text. */
-.material-symbols-rounded,
-.material-symbols-outlined,
-.material-icons,
-[data-testid="stExpanderToggleIcon"] * {{
-    font-family: 'Material Symbols Rounded' !important;
-    font-weight: normal !important;
-    font-style: normal !important;
-    font-size: 24px !important;
-    letter-spacing: normal !important;
-    text-transform: none !important;
-    white-space: nowrap !important;
-    direction: ltr !important;
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
+/* FIX: [OFFLINE-02] Replace material-ligature dependency with local CSS arrows. */
+[data-baseweb="select"] span.material-icons,
+[data-baseweb="select"] span.material-symbols-rounded,
+[data-testid="stExpanderToggleIcon"] span {{
+    font-size: 0 !important;
+    line-height: 0 !important;
+    width: 1rem !important;
+    height: 1rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}}
+[data-baseweb="select"] span.material-icons::before,
+[data-baseweb="select"] span.material-symbols-rounded::before,
+[data-testid="stExpanderToggleIcon"] span::before {{
+    content: "▾";
+    font-size: 0.95rem;
+    line-height: 1;
+    color: var(--bex-text-secondary);
+}}
+details[data-testid="stExpander"][open] [data-testid="stExpanderToggleIcon"] span::before {{
+    content: "▴";
 }}
 
 html,
@@ -689,16 +727,6 @@ footer {{ visibility: hidden; }}
 
 
 def inject_global_css() -> None:
-    # FIX: [ARCH-05] Load robust Persian font via CDN with local IRANSans fallback.
-    st.markdown(
-        '<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">',
-        unsafe_allow_html=True,
-    )
-
     global _GLOBAL_CSS_CACHE
     if _GLOBAL_CSS_CACHE is None:
         _GLOBAL_CSS_CACHE = _build_global_css()

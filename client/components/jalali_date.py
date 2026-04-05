@@ -100,7 +100,8 @@ def jalali_date_input(
         unsafe_allow_html=True,
     )
 
-    col_year, col_month, col_day = st.columns([1.1, 1.3, 1.0])
+    # FIX: [UX-DATE-01] Keep year/month/day as three equal-width columns across all panels.
+    col_year, col_month, col_day = st.columns(3)
 
     with col_year:
         year = st.selectbox(

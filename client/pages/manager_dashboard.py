@@ -21,6 +21,7 @@ from server.app.services import (
     import_service,
     reporting_export_service,
     routing_service,
+    runtime_health_service,
     telesales_service,
     visit_service,
 )
@@ -36,6 +37,29 @@ def _save_uploaded_excel(uploaded_file) -> str | None:
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp.write(uploaded_file.getbuffer())
         return tmp.name
+
+
+def _fallback_reason_fa(reason: str | None) -> str:
+    if reason == "osrm_timeout":
+        return "پاسخ OSRM در زمان مقرر دریافت نشد."
+    if reason == "osrm_invalid_response":
+        return "پاسخ OSRM معتبر نبود."
+    if reason == "osrm_unavailable":
+        return "سرویس OSRM محلی در دسترس نبود."
+    return "دلیل دقیق fallback مشخص نیست."
+
+
+def _runtime_health_caption(runtime_state: dict[str, object]) -> str:
+    osrm_text = "فعال" if bool(runtime_state.get("osrm_up", False)) else "غیرفعال"
+    tiles_text = "فعال" if bool(runtime_state.get("tiles_up", False)) else "غیرفعال"
+    osrm_latency = runtime_state.get("osrm_latency_ms")
+    tiles_latency = runtime_state.get("tiles_latency_ms")
+    osrm_latency_text = f"{osrm_latency}ms" if osrm_latency is not None else "—"
+    tiles_latency_text = f"{tiles_latency}ms" if tiles_latency is not None else "—"
+    return (
+        f"پیش‌بررسی سرویس‌ها: OSRM={osrm_text} ({osrm_latency_text}) | "
+        f"Tile={tiles_text} ({tiles_latency_text})"
+    )
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -214,17 +238,44 @@ def _run_apply_files_and_build_route(
                     progress_reason = "همه فروشگاه‌های قابل ویزیت در ظرفیت روزانه پوشش داده شدند."
                 _render_progress()
 
+                # FIX: [PERF-05] Preflight local runtime health once and keep route step fail-fast.
+                runtime_state = runtime_health_service.get_offline_runtime_status(force_refresh=True)
+                st.markdown(
+                    f'<div class="panel-description" style="text-align:right !important;margin:.25rem 0;">{_runtime_health_caption(runtime_state)}</div>',
+                    unsafe_allow_html=True,
+                )
+                if not bool(runtime_state.get("osrm_data_ready", False)):
+                    st.warning(
+                        "فایل داده OSRM پیدا نشد. مسیر مورد انتظار: offline/osrm/data/tehran-latest.osrm"
+                    )
+                if not bool(runtime_state.get("tiles_data_ready", False)):
+                    st.info(
+                        "فایل MBTiles پیدا نشد. مسیر مورد انتظار: offline/tiles/data/*.mbtiles"
+                    )
+                if runtime_state.get("osrm_up", False):
+                    route_planner = routing_service.OSRMRoutePlanner(
+                        fallback_planner=routing_service.NearestNeighborRoutePlanner(),
+                        runtime_status=runtime_state,
+                    )
+                    _set_step("route", "running", "در حال مرتب‌سازی مسیرها با OSRM محلی...")
+                else:
+                    route_planner = routing_service.NearestNeighborRoutePlanner()
+                    _set_step("route", "running", "OSRM محلی در دسترس نیست؛ مرتب‌سازی با الگوریتم پشتیبان انجام می‌شود...")
+
                 route_summary = routing_service.apply_routes_for_work_date(
                     db=db,
                     work_date=work_date,
-                    planner=routing_service.OSRMRoutePlanner(
-                        fallback_planner=routing_service.NearestNeighborRoutePlanner(),
-                    ),
+                    planner=route_planner,
                 )
                 if route_summary["osrm_used"]:
                     _set_step("route", "done", "مسیرها با OSRM بهینه شدند.", mark_complete=True)
                 else:
-                    _set_step("route", "warn", "OSRM در دسترس نبود؛ از الگوریتم پشتیبان استفاده شد.", mark_complete=True)
+                    _set_step(
+                        "route",
+                        "warn",
+                        f"OSRM در دسترس نبود؛ از الگوریتم پشتیبان استفاده شد. ({_fallback_reason_fa(route_summary.get('fallback_reason'))})",
+                        mark_complete=True,
+                    )
 
                 quality = assignment_service.evaluate_route_quality_vs_round_robin(
                     db=db,
@@ -245,6 +296,7 @@ def _run_apply_files_and_build_route(
                 "route_summary": route_summary,
                 "quality": quality,
                 "osrm_used": bool(route_summary["osrm_used"]),
+                "runtime_status": runtime_state,
             }
     finally:
         for path in [stores_path, daily_path]:
@@ -262,6 +314,7 @@ def _render_pipeline_result(result: dict) -> None:
             "osrm_routed": 0,
             "nn_routed": 0,
             "osrm_used": False,
+            "fallback_reason": None,
         },
     )
 
@@ -290,6 +343,18 @@ def _render_pipeline_result(result: dict) -> None:
         f"مسیر {route_summary.get('osrm_routed', 0)} ویزیتور با OSRM | "
         f"{route_summary.get('nn_routed', 0)} ویزیتور با الگوریتم پشتیبان"
     )
+    if int(route_summary.get("nn_routed", 0)) > 0:
+        st.caption(
+            "دلیل fallback: "
+            f"{_fallback_reason_fa(route_summary.get('fallback_reason'))}"
+        )
+    if int(route_summary.get("osrm_routed", 0)) == 0 and int(route_summary.get("nn_routed", 0)) > 0:
+        runtime_state = result.get("runtime_status") or {}
+        reason_text = _fallback_reason_fa(route_summary.get("fallback_reason"))
+        if bool(runtime_state.get("osrm_up", False)):
+            st.warning(f"OSRM پاسخ قابل استفاده نداد و مسیرها با الگوریتم پشتیبان ساخته شدند. {reason_text}")
+        else:
+            st.warning(f"OSRM محلی در دسترس نبوده و مسیرها با الگوریتم پشتیبان ساخته شده‌اند. {reason_text}")
     if comparable and not quality["passes_gate"]:
         st.warning("گیت کیفیت عبور نکرده است. بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد.")
 
@@ -547,6 +612,13 @@ def render_manager_dashboard(current_user: dict) -> None:
 
     visitor_options = _cached_visitor_options(work_date_iso)
     neu_section_header("نقشه مسیر")
+    runtime_state = runtime_health_service.get_offline_runtime_status()
+    if (not bool(runtime_state.get("osrm_up", False))) or (not bool(runtime_state.get("tiles_up", False))):
+        st.info("حالت کاهشی فعال است: اگر OSRM یا Tile در دسترس نباشد، نقشه مینیمال سریع نمایش داده می‌شود.")
+    if not bool(runtime_state.get("osrm_data_ready", False)):
+        st.warning("فایل داده OSRM پیدا نشد (offline/osrm/data/tehran-latest.osrm).")
+    if not bool(runtime_state.get("tiles_data_ready", False)):
+        st.warning("فایل MBTiles پیدا نشد (offline/tiles/data/*.mbtiles).")
     st.markdown(
         '<div class="panel-description" style="text-align:right !important;margin:0.1rem 0 0.35rem;">'
         "راهنما: در همین کادر انتخاب ویزیتور می‌توانید جست‌وجو کنید (نمونه: VIS-001 یا visitor1)."
@@ -567,7 +639,12 @@ def render_manager_dashboard(current_user: dict) -> None:
         if route_df.empty:
             st.info(get_empty_state_message(role="manager", context="no_route_for_visitor"))
         else:
-            render_route_map(route_df)
+            # FIX: [PERF-04] Pass one pre-read runtime state to map component and avoid duplicate probes/messages.
+            render_route_map(
+                route_df,
+                runtime_status=runtime_state,
+                show_runtime_messages=False,
+            )
 
     neu_section_header("خروجی‌ها")
     ex1, ex2 = st.columns(2)

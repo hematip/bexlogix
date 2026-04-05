@@ -1,11 +1,13 @@
-﻿# Purpose: Shared RTL table renderer for consistent Persian data presentation.
-# Workflow Role: Normalizes table values and renders a sortable/searchable RTL table.
+# Purpose: Shared RTL table renderer for consistent Persian data presentation.
+# Workflow Role: Normalizes tabular values and renders sortable/searchable tables.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 import jdatetime
@@ -39,7 +41,7 @@ _COLUMN_LABELS = {
     "store_name": "نام فروشگاه",
     "store_grade": "گرید فروشگاه",
     "route_order": "ترتیب مسیر",
-    "route_distance_km": "مسافت تجمعی مسیر (km)",
+    "route_distance_km": "مسافت تجمیعی مسیر (km)",
     "assignment_status": "وضعیت تخصیص",
     "visit_result": "نتیجه ویزیت",
     "followup_id": "کد پیگیری",
@@ -58,12 +60,16 @@ _COLUMN_LABELS = {
 }
 
 _EN_TO_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
+_FONTS_DIR = _ASSETS_DIR / "fonts"
 
 
+# Contract: _to_fa_digits converts English digits to Persian glyphs.
 def _to_fa_digits(value: str | int) -> str:
     return str(value).translate(_EN_TO_FA_DIGITS)
 
 
+# Contract: _normalize_value normalizes null-like values for display.
 def _normalize_value(value: Any) -> str:
     if value is None:
         return "ثبت نشده"
@@ -75,6 +81,7 @@ def _normalize_value(value: Any) -> str:
     return text
 
 
+# Contract: _to_jalali_display converts Gregorian-like values to Jalali yyyy/mm/dd.
 def _to_jalali_display(value: Any) -> str:
     if value is None or pd.isna(value):
         return "ثبت نشده"
@@ -98,6 +105,7 @@ def _to_jalali_display(value: Any) -> str:
     return f"{_to_fa_digits(j_date.year)}/{_to_fa_digits(f'{j_date.month:02d}')}/{_to_fa_digits(f'{j_date.day:02d}')}"
 
 
+# Contract: _localize_date_columns applies Jalali formatting on known date columns.
 def _localize_date_columns(df: pd.DataFrame) -> pd.DataFrame:
     localized = df.copy()
     for column in ("work_date", "followup_date", "visit_date"):
@@ -106,6 +114,7 @@ def _localize_date_columns(df: pd.DataFrame) -> pd.DataFrame:
     return localized
 
 
+# Contract: _map_status_columns localizes known enum-like status values.
 def _map_status_columns(df: pd.DataFrame) -> pd.DataFrame:
     normalized = df.copy()
 
@@ -123,6 +132,7 @@ def _map_status_columns(df: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
+# Contract: _rename_columns applies Persian headers for known columns.
 def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:
     renamed = df.copy()
     applicable = {col: _COLUMN_LABELS[col] for col in renamed.columns if col in _COLUMN_LABELS}
@@ -131,6 +141,7 @@ def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:
     return renamed
 
 
+# Contract: _sanitize_df enforces string-safe cells for embedded HTML rendering.
 def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
     sanitized = df.copy()
     for col in sanitized.columns:
@@ -138,10 +149,34 @@ def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
     return sanitized
 
 
+# Contract: _slugify converts arbitrary keys to DOM-safe IDs.
 def _slugify(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_\-]", "_", value)
 
 
+# Contract: _build_local_font_face_css embeds local Vazirmatn files into iframe CSS.
+def _build_local_font_face_css() -> str:
+    # FIX: [OFFLINE-02] Table iframe uses local embedded font instead of CDN.
+    css_blocks: list[str] = []
+    for weight, filename in (("400", "Vazirmatn-Regular.ttf"), ("700", "Vazirmatn-Bold.ttf")):
+        font_path = _FONTS_DIR / filename
+        if not font_path.exists():
+            continue
+        encoded = base64.b64encode(font_path.read_bytes()).decode("ascii")
+        css_blocks.append(
+            f"""
+@font-face {{
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: {weight};
+  src: url(data:font/ttf;base64,{encoded}) format('truetype');
+  font-display: swap;
+}}"""
+        )
+    return "".join(css_blocks)
+
+
+# Contract: _apply_search filters rows by substring search over all columns.
 def _apply_search(df: pd.DataFrame, query: str) -> pd.DataFrame:
     needle = str(query or "").strip().lower()
     if not needle:
@@ -152,6 +187,7 @@ def _apply_search(df: pd.DataFrame, query: str) -> pd.DataFrame:
     return df[mask]
 
 
+# Contract: render_rtl_table renders a sortable/searchable table widget using a local iframe.
 def render_rtl_table(
     df: pd.DataFrame,
     *,
@@ -159,7 +195,6 @@ def render_rtl_table(
     max_height_px: int = 420,
     enable_search: bool = True,
 ) -> None:
-    """Render a sortable/searchable RTL table with centered cells and Jalali dates."""
     if df.empty:
         st.info("داده‌ای برای نمایش در جدول وجود ندارد.")
         return
@@ -189,16 +224,17 @@ def render_rtl_table(
     }
     payload_json = json.dumps(payload, ensure_ascii=False)
     table_id = f"bex_rtl_table_{_slugify(key_prefix)}"
+    local_font_css = _build_local_font_face_css()
 
-    # FIX: Custom JS sorting keeps grade priority VIP > A+ > A > B > C and allows header-click sort.
+    # FIX: Grade sort order stays deterministic: VIP > A+ > A > B > C.
     html_block = f"""
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet" />
     <style>
+      {local_font_css}
       body {{
         margin: 0;
         padding: 0;
         direction: rtl;
-        font-family: Vazirmatn, Tahoma, Arial, sans-serif;
+        font-family: Vazirmatn, IRANSansFaNum, Tahoma, Arial, sans-serif;
         background: transparent;
         color: #2C3E50;
       }}
@@ -262,7 +298,6 @@ def render_rtl_table(
         font-weight: 700;
         cursor: pointer;
         user-select: none;
-        border-top: 1px solid #d7dde8;
       }}
       .bex-rtl-table th:first-child {{ border-top-right-radius: 10px; }}
       .bex-rtl-table th:last-child {{ border-top-left-radius: 10px; }}
@@ -291,14 +326,14 @@ def render_rtl_table(
 
         const toEnDigits = (v) => String(v ?? "").replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d));
         const parseNumber = (v) => {{
-          const cleaned = toEnDigits(v).replace(/[^0-9.\-]/g, "").trim();
+          const cleaned = toEnDigits(v).replace(/[^0-9.\\-]/g, "").trim();
           if (!cleaned) return null;
           const n = Number(cleaned);
           return Number.isFinite(n) ? n : null;
         }};
         const parseJalali = (v) => {{
           const t = toEnDigits(v).trim();
-          const m = t.match(/^(\d{{3,4}})\/(\d{{1,2}})\/(\d{{1,2}})$/);
+          const m = t.match(/^(\\d{{3,4}})\\/(\\d{{1,2}})\\/(\\d{{1,2}})$/);
           if (!m) return null;
           return Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]);
         }};

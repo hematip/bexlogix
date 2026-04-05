@@ -14,7 +14,12 @@ from client.components.jalali_date import jalali_date_input
 from client.components.rtl_table import render_rtl_table
 from client.components.route_map import render_route_map
 from client.styles.neumorphism import neu_section_header, render_metric_grid, render_page_title
-from server.app.services import dashboard_query_service, reporting_export_service, telesales_service
+from server.app.services import (
+    dashboard_query_service,
+    reporting_export_service,
+    runtime_health_service,
+    telesales_service,
+)
 from server.db.database import get_db
 
 _ALL_VISITORS_OPTION = "— همه ویزیتورها —"
@@ -139,7 +144,12 @@ def render_supervisor_dashboard(current_user: dict) -> None:
 
         route_df = _cached_route_map_data(work_date_iso, selected_id)
         if not route_df.empty:
-            render_route_map(route_df)
+            runtime_state = runtime_health_service.get_offline_runtime_status()
+            render_route_map(
+                route_df,
+                runtime_status=runtime_state,
+                show_runtime_messages=False,
+            )
 
     neu_section_header("خروجی‌ها")
     d1, d2 = st.columns(2)

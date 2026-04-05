@@ -15,18 +15,16 @@ venv/
 *.db
 *.sqlite3
 
-# IDE settings
+# IDE and local settings
 .idea/
 .vscode/
-
-# Environment files
 .env
 
-# OS generated files
+# OS files
 .DS_Store
 Thumbs.db
 
-# Test / coverage
+# Caches / coverage
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -35,26 +33,21 @@ Thumbs.db
 .coverage.*
 htmlcov/
 
-# Excel temporary files
+# Streamlit machine-specific
+.streamlit/secrets.toml
+
+# Local binary and office artifacts
 ~$*.xlsx
+~$*.xls
+
+# Keep sample Excel files local-only (security policy)
 data/*.xlsx
 data/*.xls
 
-# Keep sample data if needed, but ignore customer/local raw files
 data/raw/
 data/tmp/
-docs/audit/tmp/
 
-# My personal docs
-ERD.md
-BexLogix.docx
-README_LOCAL.md
-
-# Local markdown docs (do not push)
-BexLogix.md
-BexLogix_Comprehensive_Technical_Product_Specification.md
-docs/**/*.md
-docs/audit/legacy-tests/
-
-# Streamlit local secrets (machine-specific)
-.streamlit/secrets.toml
+# Keep only canonical docs tracked
+*.md
+!README.md
+!DEPLOY.md

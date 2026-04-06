@@ -1,4 +1,4 @@
-﻿# Purpose: Manager dashboard with route pipeline, governance controls, and operational monitoring.
+# Purpose: Manager dashboard with route pipeline, governance controls, and operational monitoring.
 # Workflow Role: Main control plane for manager actions in the daily planning lifecycle.
 
 from __future__ import annotations
@@ -14,7 +14,11 @@ from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
 from client.components.rtl_table import render_rtl_table
 from client.components.route_map import render_route_map
-from client.styles.neumorphism import neu_section_header, render_metric_grid, render_page_title
+from client.styles.neumorphism import (
+    neu_section_header,
+    render_metric_grid,
+    render_page_title,
+)
 from server.app.services import (
     assignment_service,
     dashboard_query_service,
@@ -69,7 +73,9 @@ def _cached_operational_snapshot(work_date_iso: str) -> tuple[dict, dict, list[d
     with get_db() as db:
         snapshot = assignment_service.get_work_date_operational_snapshot(db, work_date)
         kpis = reporting_export_service.get_daily_kpis(db, work_date)
-        pending_queue = telesales_service.list_pending_followups(db, as_of_date=work_date)
+        pending_queue = telesales_service.list_pending_followups(
+            db, as_of_date=work_date
+        )
     return snapshot, kpis, pending_queue
 
 
@@ -77,7 +83,9 @@ def _cached_operational_snapshot(work_date_iso: str) -> tuple[dict, dict, list[d
 def _cached_assignments(work_date_iso: str) -> pd.DataFrame:
     work_date = date.fromisoformat(work_date_iso)
     with get_db() as db:
-        return dashboard_query_service.load_manager_assignments_df(db=db, work_date=work_date)
+        return dashboard_query_service.load_manager_assignments_df(
+            db=db, work_date=work_date
+        )
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -103,6 +111,7 @@ def _run_apply_files_and_build_route(
     current_user: dict,
     stores_file,
     daily_file,
+    balance_distance: bool = False,
 ) -> dict:
     # FIX: [UX-06] Expose granular pipeline progress with checklist + progress bar.
     if daily_file is None:
@@ -120,7 +129,9 @@ def _run_apply_files_and_build_route(
             completed_steps = 0
             assigned_count = 0
             unassigned_count = 0
-            progress_reason = "این نوار پیشرفت مربوط به فرآیند تولید تخصیص و ساخت مسیر است."
+            progress_reason = (
+                "این نوار پیشرفت مربوط به فرآیند تولید تخصیص و ساخت مسیر است."
+            )
             step_order = [
                 ("stores", "بارگذاری فایل فروشگاه‌ها"),
                 ("daily", "ثبت وضعیت روزانه ویزیتورها"),
@@ -147,10 +158,10 @@ def _run_apply_files_and_build_route(
                 progress_note_box.markdown(
                     (
                         '<div class="pipeline-progress-note">'
-                        f'نکته: از {assigned_count + unassigned_count} فروشگاه قابل ویزیت، '
-                        f'{assigned_count} فروشگاه تخصیص یافته و {unassigned_count} فروشگاه تخصیص نیافته است.'
+                        f"نکته: از {assigned_count + unassigned_count} فروشگاه قابل ویزیت، "
+                        f"{assigned_count} فروشگاه تخصیص یافته و {unassigned_count} فروشگاه تخصیص نیافته است."
                         "<br/>"
-                        f'دلیل: {progress_reason}'
+                        f"دلیل: {progress_reason}"
                         "</div>"
                     ),
                     unsafe_allow_html=True,
@@ -194,18 +205,39 @@ def _run_apply_files_and_build_route(
             with get_db() as db:
                 stores_processed = 0
                 if stores_path:
-                    stores_processed = import_service.import_stores_from_excel(stores_path, db)
-                    _set_step("stores", "done", f"فروشگاه‌ها بارگذاری شدند ({stores_processed} ردیف)", mark_complete=True)
+                    stores_processed = import_service.import_stores_from_excel(
+                        stores_path, db
+                    )
+                    _set_step(
+                        "stores",
+                        "done",
+                        f"فروشگاه‌ها بارگذاری شدند ({stores_processed} ردیف)",
+                        mark_complete=True,
+                    )
                 else:
                     # Optional input still counts as finished step for progress continuity.
-                    _set_step("stores", "done", "فایل فروشگاه جدیدی بارگذاری نشد.", mark_complete=True)
+                    _set_step(
+                        "stores",
+                        "done",
+                        "فایل فروشگاه جدیدی بارگذاری نشد.",
+                        mark_complete=True,
+                    )
 
-                daily_processed = import_daily_visitor_statuses_from_excel(daily_path, db)
-                _set_step("daily", "done", f"وضعیت روزانه ویزیتورها ثبت شد ({daily_processed} نفر)", mark_complete=True)
+                daily_processed = import_daily_visitor_statuses_from_excel(
+                    daily_path, db
+                )
+                _set_step(
+                    "daily",
+                    "done",
+                    f"وضعیت روزانه ویزیتورها ثبت شد ({daily_processed} نفر)",
+                    mark_complete=True,
+                )
 
-                status_count_for_selected_date = dashboard_query_service.get_daily_status_row_count(
-                    db=db,
-                    work_date=work_date,
+                status_count_for_selected_date = (
+                    dashboard_query_service.get_daily_status_row_count(
+                        db=db,
+                        work_date=work_date,
+                    )
                 )
                 if status_count_for_selected_date <= 0:
                     raise ValueError(
@@ -218,6 +250,7 @@ def _run_apply_files_and_build_route(
                     work_date=work_date,
                     manager_user_id=current_user["id"],
                     replace_existing_draft=True,
+                    balance_distance=balance_distance,
                 )
                 _set_step(
                     "assign",
@@ -231,15 +264,17 @@ def _run_apply_files_and_build_route(
                 assigned_count = int(draft_summary.get("created_assignments", 0))
                 unassigned_count = int(draft_summary.get("unassigned_due_stores", 0))
                 if unassigned_count > 0:
-                    progress_reason = (
-                        "مجموع ظرفیت روزانه ویزیتورهای فعال کمتر از تعداد فروشگاه‌های قابل ویزیت بوده است."
-                    )
+                    progress_reason = "مجموع ظرفیت روزانه ویزیتورهای فعال کمتر از تعداد فروشگاه‌های قابل ویزیت بوده است."
                 else:
-                    progress_reason = "همه فروشگاه‌های قابل ویزیت در ظرفیت روزانه پوشش داده شدند."
+                    progress_reason = (
+                        "همه فروشگاه‌های قابل ویزیت در ظرفیت روزانه پوشش داده شدند."
+                    )
                 _render_progress()
 
                 # FIX: [PERF-05] Preflight local runtime health once and keep route step fail-fast.
-                runtime_state = runtime_health_service.get_offline_runtime_status(force_refresh=True)
+                runtime_state = runtime_health_service.get_offline_runtime_status(
+                    force_refresh=True
+                )
                 st.markdown(
                     f'<div class="panel-description" style="text-align:right !important;margin:.25rem 0;">{_runtime_health_caption(runtime_state)}</div>',
                     unsafe_allow_html=True,
@@ -257,10 +292,16 @@ def _run_apply_files_and_build_route(
                         fallback_planner=routing_service.NearestNeighborRoutePlanner(),
                         runtime_status=runtime_state,
                     )
-                    _set_step("route", "running", "در حال مرتب‌سازی مسیرها با OSRM محلی...")
+                    _set_step(
+                        "route", "running", "در حال مرتب‌سازی مسیرها با OSRM محلی..."
+                    )
                 else:
                     route_planner = routing_service.NearestNeighborRoutePlanner()
-                    _set_step("route", "running", "OSRM محلی در دسترس نیست؛ مرتب‌سازی با الگوریتم پشتیبان انجام می‌شود...")
+                    _set_step(
+                        "route",
+                        "running",
+                        "OSRM محلی در دسترس نیست؛ مرتب‌سازی با الگوریتم پشتیبان انجام می‌شود...",
+                    )
 
                 route_summary = routing_service.apply_routes_for_work_date(
                     db=db,
@@ -268,7 +309,12 @@ def _run_apply_files_and_build_route(
                     planner=route_planner,
                 )
                 if route_summary["osrm_used"]:
-                    _set_step("route", "done", "مسیرها با OSRM بهینه شدند.", mark_complete=True)
+                    _set_step(
+                        "route",
+                        "done",
+                        "مسیرها با OSRM بهینه شدند.",
+                        mark_complete=True,
+                    )
                 else:
                     _set_step(
                         "route",
@@ -306,7 +352,15 @@ def _run_apply_files_and_build_route(
 
 def _render_pipeline_result(result: dict) -> None:
     draft_summary = result.get("draft_summary", {})
-    quality = result.get("quality", {"baseline_km": 0.0, "current_km": 0.0, "improvement_pct": 0.0, "passes_gate": False})
+    quality = result.get(
+        "quality",
+        {
+            "baseline_km": 0.0,
+            "current_km": 0.0,
+            "improvement_pct": 0.0,
+            "passes_gate": False,
+        },
+    )
     route_summary = result.get(
         "route_summary",
         {
@@ -327,9 +381,14 @@ def _render_pipeline_result(result: dict) -> None:
     )
 
     comparable = not (
-        int(route_summary.get("osrm_routed", 0)) == 0 and int(route_summary.get("nn_routed", 0)) > 0
+        int(route_summary.get("osrm_routed", 0)) == 0
+        and int(route_summary.get("nn_routed", 0)) > 0
     )
-    gate_text = "قابل مقایسه نیست" if not comparable else ("قبول" if quality["passes_gate"] else "رد")
+    gate_text = (
+        "قابل مقایسه نیست"
+        if not comparable
+        else ("قبول" if quality["passes_gate"] else "رد")
+    )
 
     render_metric_grid(
         [
@@ -348,15 +407,52 @@ def _render_pipeline_result(result: dict) -> None:
             "دلیل fallback: "
             f"{_fallback_reason_fa(route_summary.get('fallback_reason'))}"
         )
-    if int(route_summary.get("osrm_routed", 0)) == 0 and int(route_summary.get("nn_routed", 0)) > 0:
+    if (
+        int(route_summary.get("osrm_routed", 0)) == 0
+        and int(route_summary.get("nn_routed", 0)) > 0
+    ):
         runtime_state = result.get("runtime_status") or {}
         reason_text = _fallback_reason_fa(route_summary.get("fallback_reason"))
         if bool(runtime_state.get("osrm_up", False)):
-            st.warning(f"OSRM پاسخ قابل استفاده نداد و مسیرها با الگوریتم پشتیبان ساخته شدند. {reason_text}")
+            st.warning(
+                f"OSRM پاسخ قابل استفاده نداد و مسیرها با الگوریتم پشتیبان ساخته شدند. {reason_text}"
+            )
         else:
-            st.warning(f"OSRM محلی در دسترس نبوده و مسیرها با الگوریتم پشتیبان ساخته شده‌اند. {reason_text}")
+            st.warning(
+                f"OSRM محلی در دسترس نبوده و مسیرها با الگوریتم پشتیبان ساخته شده‌اند. {reason_text}"
+            )
     if comparable and not quality["passes_gate"]:
-        st.warning("گیت کیفیت عبور نکرده است. بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد.")
+        st.warning(
+            "گیت کیفیت عبور نکرده است. بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد."
+        )
+
+    # Distance fairness metrics display.
+    fairness = draft_summary.get("fairness") or {}
+    if fairness:
+        balance_mode = "فعال" if draft_summary.get("balance_distance") else "غیرفعال"
+        fairness_ok = fairness.get("is_balanced", True)
+        fairness_status = "متعادل" if fairness_ok else "نامتعادل"
+        fairness_color = "#27AE60" if fairness_ok else "#E74C3C"
+        render_metric_grid(
+            [
+                ("حالت تعادل مسافت", balance_mode),
+                ("میانگین مسافت ویزیتورها (km)", fairness.get("mean_km", 0.0)),
+                (
+                    "کمترین / بیشترین مسافت (km)",
+                    f"{fairness.get('min_km', 0.0)} / {fairness.get('max_km', 0.0)}",
+                ),
+                (
+                    "حداکثر انحراف از میانگین",
+                    f"{fairness.get('max_deviation_pct', 0.0)}%",
+                ),
+            ]
+        )
+        st.markdown(
+            f'<div style="direction:rtl;text-align:right;font-size:.85rem;margin:.2rem 0 .5rem;">'
+            f'وضعیت عدالت مسافت: <strong style="color:{fairness_color};">{fairness_status}</strong>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def render_manager_dashboard(current_user: dict) -> None:
@@ -394,7 +490,9 @@ def render_manager_dashboard(current_user: dict) -> None:
             f"{published_count} تخصیص منتشرشده"
         )
     if is_soft_locked:
-        st.info("برای این تاریخ هنوز ویزیت/پیگیری ثبت نشده است. می‌توانید پاک‌سازی کامل انجام دهید و دوباره فایل آپلود کنید.")
+        st.info(
+            "برای این تاریخ هنوز ویزیت/پیگیری ثبت نشده است. می‌توانید پاک‌سازی کامل انجام دهید و دوباره فایل آپلود کنید."
+        )
 
     with st.expander("اعمال فایل‌ها و ساخت مسیر", expanded=not is_hard_locked):
         st.markdown(
@@ -432,6 +530,14 @@ def render_manager_dashboard(current_user: dict) -> None:
                 disabled=is_hard_locked,
             )
 
+        balance_distance = st.checkbox(
+            "تعادل تقریبی مسافت بین ویزیتورها (حداکثر ۲۰٪ اختلاف از میانگین)",
+            value=True,
+            key=f"balance_distance_{work_date_iso}",
+            disabled=is_hard_locked,
+            help="فعال‌سازی این گزینه باعث می‌شود فروشگاه‌ها طوری تقسیم شوند که مسافت حرکت هر ویزیتور تقریباً برابر باشد.",
+        )
+
         if st.button(
             "اعمال فایل‌ها و ساخت مسیر",
             key=f"build_pipeline_{work_date_iso}",
@@ -439,7 +545,9 @@ def render_manager_dashboard(current_user: dict) -> None:
             disabled=is_hard_locked,
         ):
             if is_soft_locked:
-                st.error("برای این تاریخ تخصیص منتشرشده وجود دارد. ابتدا «پاک‌سازی کامل همین تاریخ» را انجام دهید، سپس مسیر جدید بسازید.")
+                st.error(
+                    "برای این تاریخ تخصیص منتشرشده وجود دارد. ابتدا «پاک‌سازی کامل همین تاریخ» را انجام دهید، سپس مسیر جدید بسازید."
+                )
                 st.stop()
             try:
                 result = _run_apply_files_and_build_route(
@@ -447,6 +555,7 @@ def render_manager_dashboard(current_user: dict) -> None:
                     current_user=current_user,
                     stores_file=stores_file,
                     daily_file=daily_file,
+                    balance_distance=balance_distance,
                 )
                 st.session_state["manager_last_pipeline_result"] = result
                 st.session_state["manager_last_pipeline_date"] = work_date_iso
@@ -496,7 +605,9 @@ def render_manager_dashboard(current_user: dict) -> None:
         if not has_any_daily_data:
             st.info("برای این تاریخ داده عملیاتی یا تخصیصی ثبت نشده است.")
         elif not has_operational_data and has_any_daily_data:
-            st.info("برای این تاریخ هنوز ویزیت یا پیگیری عملیاتی ثبت نشده است؛ پاک‌سازی کامل بدون از دست‌رفتن سابقه ویزیت انجام می‌شود.")
+            st.info(
+                "برای این تاریخ هنوز ویزیت یا پیگیری عملیاتی ثبت نشده است؛ پاک‌سازی کامل بدون از دست‌رفتن سابقه ویزیت انجام می‌شود."
+            )
         confirm_flush = st.checkbox(
             "تأیید می‌کنم پاکسازی کامل فقط برای همین تاریخ انجام شود.",
             key=f"confirm_flush_{work_date_iso}",
@@ -593,7 +704,9 @@ def render_manager_dashboard(current_user: dict) -> None:
         assignment_view_df = assignment_df.copy()
         # FIX: Show store grade in manager-generated assignment list for route review.
         if "store_grade" in assignment_view_df.columns:
-            assignment_view_df["store_grade"] = assignment_view_df["store_grade"].fillna("نامشخص")
+            assignment_view_df["store_grade"] = assignment_view_df[
+                "store_grade"
+            ].fillna("نامشخص")
         render_rtl_table(
             assignment_view_df,
             key_prefix=f"manager_assignments_{work_date_iso}",
@@ -602,7 +715,9 @@ def render_manager_dashboard(current_user: dict) -> None:
     neu_section_header("صف در انتظار تماس تلفنی")
     if pending_queue:
         pending_df = pd.DataFrame(pending_queue)
-        pending_df = pending_df.drop(columns=["store_lat", "store_lon"], errors="ignore")
+        pending_df = pending_df.drop(
+            columns=["store_lat", "store_lon"], errors="ignore"
+        )
         render_rtl_table(
             pending_df,
             key_prefix=f"manager_pending_telesales_{work_date_iso}",
@@ -613,8 +728,12 @@ def render_manager_dashboard(current_user: dict) -> None:
     visitor_options = _cached_visitor_options(work_date_iso)
     neu_section_header("نقشه مسیر")
     runtime_state = runtime_health_service.get_offline_runtime_status()
-    if (not bool(runtime_state.get("osrm_up", False))) or (not bool(runtime_state.get("tiles_up", False))):
-        st.info("حالت کاهشی فعال است: اگر OSRM یا Tile در دسترس نباشد، نقشه مینیمال سریع نمایش داده می‌شود.")
+    if (not bool(runtime_state.get("osrm_up", False))) or (
+        not bool(runtime_state.get("tiles_up", False))
+    ):
+        st.info(
+            "حالت کاهشی فعال است: اگر OSRM یا Tile در دسترس نباشد، نقشه مینیمال سریع نمایش داده می‌شود."
+        )
     if not bool(runtime_state.get("osrm_data_ready", False)):
         st.warning("فایل داده OSRM پیدا نشد (offline/osrm/data/tehran-latest.osrm).")
     if not bool(runtime_state.get("tiles_data_ready", False)):
@@ -637,7 +756,9 @@ def render_manager_dashboard(current_user: dict) -> None:
         selected_id = visitor_options[selected_code]
         route_df = _cached_route_map(work_date_iso, selected_id)
         if route_df.empty:
-            st.info(get_empty_state_message(role="manager", context="no_route_for_visitor"))
+            st.info(
+                get_empty_state_message(role="manager", context="no_route_for_visitor")
+            )
         else:
             # FIX: [PERF-04] Pass one pre-read runtime state to map component and avoid duplicate probes/messages.
             render_route_map(

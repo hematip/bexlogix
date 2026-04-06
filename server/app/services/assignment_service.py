@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.roles import UserRole
-from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError, err
+from server.app.errors import (
+    DomainError,
+    PermissionError as AppPermissionError,
+    ValidationError,
+    err,
+)
 from server.app.models.daily_assignment import DailyAssignment
 from server.app.models.store import Store
 from server.app.models.store_schedule_state import StoreScheduleState
@@ -25,6 +30,9 @@ from server.app.repositories import (
 from server.app.services import routing_service, scheduling_service
 
 QUALITY_GATE_THRESHOLD_PCT = 20.0
+DISTANCE_BALANCE_TOLERANCE_PCT = (
+    20.0  # Max allowed deviation from mean visitor distance.
+)
 
 
 # Contract: _assert_manager_user executes one deterministic step in the workflow.
@@ -67,7 +75,9 @@ def get_active_visitor_day_contexts(db: Session, work_date: date) -> list[dict]:
         if not row.user_is_active or not row.profile_is_active:
             continue
 
-        is_active_today = True if row.is_active_today is None else bool(row.is_active_today)
+        is_active_today = (
+            True if row.is_active_today is None else bool(row.is_active_today)
+        )
         if not is_active_today:
             continue
 
@@ -80,8 +90,12 @@ def get_active_visitor_day_contexts(db: Session, work_date: date) -> list[dict]:
         if capacity_value <= 0:
             continue
 
-        start_lat = row.start_lat if row.start_lat is not None else row.default_start_lat
-        start_lon = row.start_lon if row.start_lon is not None else row.default_start_lon
+        start_lat = (
+            row.start_lat if row.start_lat is not None else row.default_start_lat
+        )
+        start_lon = (
+            row.start_lon if row.start_lon is not None else row.default_start_lon
+        )
 
         contexts.append(
             {
@@ -104,14 +118,18 @@ def _get_due_stores_sorted(db: Session, work_date: date) -> list[Store]:
         return []
 
     stores = store_repository.list_stores_by_ids(db=db, store_ids=due_store_ids)
-    states = store_repository.list_schedule_states_by_store_ids(db=db, store_ids=due_store_ids)
+    states = store_repository.list_schedule_states_by_store_ids(
+        db=db, store_ids=due_store_ids
+    )
     states_by_store_id = {state.store_id: state for state in states}
 
     # Contract: sort_key executes one deterministic step in the workflow.
     def sort_key(store: Store):
         state = states_by_store_id.get(store.id)
         overdue_days = state.overdue_days if state else 0
-        next_visit_date = state.next_visit_date if state and state.next_visit_date else date.min
+        next_visit_date = (
+            state.next_visit_date if state and state.next_visit_date else date.min
+        )
         interval_days = scheduling_service.get_store_visit_interval_days(store)
         return (-overdue_days, interval_days, next_visit_date, store.store_code)
 
@@ -120,7 +138,9 @@ def _get_due_stores_sorted(db: Session, work_date: date) -> list[Store]:
 
 # Contract: _delete_existing_drafts executes one deterministic step in the workflow.
 def _delete_existing_drafts(db: Session, work_date: date) -> int:
-    return assignment_repository.delete_draft_assignments_for_date(db=db, work_date=work_date)
+    return assignment_repository.delete_draft_assignments_for_date(
+        db=db, work_date=work_date
+    )
 
 
 # Contract: _select_closest_store_for_visitor executes one deterministic step in the workflow.
@@ -151,8 +171,12 @@ def _select_closest_store_for_visitor(
 
 
 # Contract: _geo_capacity_allocate_stores executes one deterministic step in the workflow.
-def _geo_capacity_allocate_stores(visitors: list[dict], due_stores: list[Store]) -> dict[int, list[Store]]:
-    allocations: dict[int, list[Store]] = {visitor["visitor_id"]: [] for visitor in visitors}
+def _geo_capacity_allocate_stores(
+    visitors: list[dict], due_stores: list[Store]
+) -> dict[int, list[Store]]:
+    allocations: dict[int, list[Store]] = {
+        visitor["visitor_id"]: [] for visitor in visitors
+    }
     if not visitors or not due_stores:
         return allocations
 
@@ -161,10 +185,14 @@ def _geo_capacity_allocate_stores(visitors: list[dict], due_stores: list[Store])
             "remaining_capacity": int(visitor["capacity"]),
             "assigned_count": 0,
             "current_lat": (
-                float(visitor["start_lat"]) if visitor["start_lat"] is not None else None
+                float(visitor["start_lat"])
+                if visitor["start_lat"] is not None
+                else None
             ),
             "current_lon": (
-                float(visitor["start_lon"]) if visitor["start_lon"] is not None else None
+                float(visitor["start_lon"])
+                if visitor["start_lon"] is not None
+                else None
             ),
         }
         for visitor in visitors
@@ -188,14 +216,18 @@ def _geo_capacity_allocate_stores(visitors: list[dict], due_stores: list[Store])
             state = visitor_state[visitor_id]
             if state["remaining_capacity"] <= 0:
                 continue
-            nearest = _select_closest_store_for_visitor(state, unassigned_stores, store_priority)
+            nearest = _select_closest_store_for_visitor(
+                state, unassigned_stores, store_priority
+            )
             if nearest is None:
                 continue
             nearest_store, distance = nearest
             candidate_pairs.append((distance, visitor_id, nearest_store))
 
         if candidate_pairs:
-            candidate_pairs.sort(key=lambda item: (item[0], item[1], item[2].store_code))
+            candidate_pairs.sort(
+                key=lambda item: (item[0], item[1], item[2].store_code)
+            )
             _, selected_visitor_id, selected_store = candidate_pairs[0]
         else:
             # Fallback when start points are missing: assign by smallest load.
@@ -218,19 +250,266 @@ def _geo_capacity_allocate_stores(visitors: list[dict], due_stores: list[Store])
     return allocations
 
 
+# Contract: _geo_capacity_allocate_stores_balanced allocates stores with distance fairness.
+# Strategy: round-robin where the visitor with the LOWEST cumulative travel distance picks
+# their nearest unassigned store. When a visitor exceeds the tolerance threshold above the
+# current mean, they are temporarily skipped (soft-capped) until others catch up.
+# This naturally equalizes total travel distance across visitors even at the cost of
+# slightly unequal store counts.
+def _geo_capacity_allocate_stores_balanced(
+    visitors: list[dict],
+    due_stores: list[Store],
+) -> dict[int, list[Store]]:
+    allocations: dict[int, list[Store]] = {
+        visitor["visitor_id"]: [] for visitor in visitors
+    }
+    if not visitors or not due_stores:
+        return allocations
+
+    tolerance = DISTANCE_BALANCE_TOLERANCE_PCT / 100.0  # 0.20
+
+    # When balancing, add a 20% capacity headroom so that visitors with shorter routes
+    # can absorb extra stores from those with longer routes.
+    total_stores = len(due_stores)
+    total_capacity_raw = sum(int(v["capacity"]) for v in visitors)
+    headroom_factor = 1.2 if total_capacity_raw <= total_stores else 1.0
+
+    visitor_state = {
+        visitor["visitor_id"]: {
+            "remaining_capacity": min(
+                int(int(visitor["capacity"]) * headroom_factor),
+                total_stores,  # Never exceed total stores as upper bound.
+            ),
+            "assigned_count": 0,
+            "cumulative_km": 0.0,
+            "current_lat": (
+                float(visitor["start_lat"])
+                if visitor["start_lat"] is not None
+                else None
+            ),
+            "current_lon": (
+                float(visitor["start_lon"])
+                if visitor["start_lon"] is not None
+                else None
+            ),
+        }
+        for visitor in visitors
+    }
+
+    store_priority = {store.id: index for index, store in enumerate(due_stores)}
+    unassigned_stores = due_stores.copy()
+
+    while unassigned_stores:
+        # Find active visitors (still have capacity).
+        active_visitors = [
+            visitor
+            for visitor in visitors
+            if visitor_state[visitor["visitor_id"]]["remaining_capacity"] > 0
+        ]
+        if not active_visitors:
+            break
+
+        # Compute mean cumulative distance across ALL active visitors.
+        active_distances = [
+            visitor_state[v["visitor_id"]]["cumulative_km"] for v in active_visitors
+        ]
+        mean_km = (
+            sum(active_distances) / len(active_distances) if active_distances else 0.0
+        )
+
+        # Soft-cap: skip visitors whose cumulative_km > mean * (1 + tolerance),
+        # unless everyone exceeds the cap (then allow all).
+        if mean_km > 0.5:  # Only apply cap when meaningful distances have accumulated.
+            eligible_visitors = [
+                v
+                for v in active_visitors
+                if visitor_state[v["visitor_id"]]["cumulative_km"]
+                <= mean_km * (1.0 + tolerance)
+            ]
+            if not eligible_visitors:
+                eligible_visitors = active_visitors
+        else:
+            eligible_visitors = active_visitors
+
+        # Among eligible, pick the one with the lowest cumulative distance.
+        eligible_visitors.sort(
+            key=lambda v: (
+                visitor_state[v["visitor_id"]]["cumulative_km"],
+                visitor_state[v["visitor_id"]]["assigned_count"],
+                v["visitor_id"],
+            )
+        )
+        selected_visitor = eligible_visitors[0]
+        selected_vid = selected_visitor["visitor_id"]
+        state = visitor_state[selected_vid]
+
+        # Find nearest store for this visitor.
+        if state["current_lat"] is not None and state["current_lon"] is not None:
+            nearest = _select_closest_store_for_visitor(
+                state, unassigned_stores, store_priority
+            )
+            if nearest is not None:
+                selected_store, step_km = nearest
+            else:
+                selected_store = unassigned_stores[0]
+                step_km = 0.0
+        else:
+            selected_store = unassigned_stores[0]
+            step_km = 0.0
+
+        allocations[selected_vid].append(selected_store)
+        state["remaining_capacity"] -= 1
+        state["assigned_count"] += 1
+        state["cumulative_km"] += step_km
+        state["current_lat"] = float(selected_store.lat)
+        state["current_lon"] = float(selected_store.lon)
+        unassigned_stores.remove(selected_store)
+
+    # Phase 2: Post-allocation swap rebalancing.
+    # Move stores from the highest-distance visitor to the lowest-distance visitor
+    # when doing so reduces max deviation.
+    visitor_by_id = {v["visitor_id"]: v for v in visitors}
+    max_swap_iterations = len(due_stores) * 2  # Safety limit.
+    for _ in range(max_swap_iterations):
+        # Recalculate distances.
+        visitor_km: dict[int, float] = {}
+        for vid, store_list in allocations.items():
+            v = visitor_by_id[vid]
+            total = 0.0
+            lat = float(v["start_lat"]) if v["start_lat"] is not None else None
+            lon = float(v["start_lon"]) if v["start_lon"] is not None else None
+            for store in store_list:
+                if lat is not None and lon is not None:
+                    total += _haversine_km(lat, lon, float(store.lat), float(store.lon))
+                lat = float(store.lat)
+                lon = float(store.lon)
+            visitor_km[vid] = total
+
+        if not visitor_km:
+            break
+        values = list(visitor_km.values())
+        mean_km_post = sum(values) / len(values)
+        if mean_km_post < 0.1:
+            break
+
+        max_vid = max(visitor_km, key=visitor_km.get)
+        min_vid = min(visitor_km, key=visitor_km.get)
+        if max_vid == min_vid:
+            break
+
+        current_deviation = max(abs(v - mean_km_post) / mean_km_post for v in values)
+        if current_deviation <= tolerance:
+            break  # Already within tolerance.
+
+        # Try to move the last store from max_vid to min_vid.
+        if not allocations[max_vid]:
+            break
+        candidate_store = allocations[max_vid][-1]
+
+        # Simulate the swap.
+        test_max_stores = allocations[max_vid][:-1]
+        test_min_stores = allocations[min_vid] + [candidate_store]
+
+        def _calc_path(vid, store_list):
+            v = visitor_by_id[vid]
+            total = 0.0
+            lat = float(v["start_lat"]) if v["start_lat"] is not None else None
+            lon = float(v["start_lon"]) if v["start_lon"] is not None else None
+            for store in store_list:
+                if lat is not None and lon is not None:
+                    total += _haversine_km(lat, lon, float(store.lat), float(store.lon))
+                lat = float(store.lat)
+                lon = float(store.lon)
+            return total
+
+        new_max_km = _calc_path(max_vid, test_max_stores)
+        new_min_km = _calc_path(min_vid, test_min_stores)
+
+        # Accept swap only if it reduces the spread between max and min.
+        old_spread = visitor_km[max_vid] - visitor_km[min_vid]
+        new_spread = abs(new_max_km - new_min_km)
+        if new_spread >= old_spread:
+            break  # No improvement, stop.
+
+        allocations[max_vid] = test_max_stores
+        allocations[min_vid] = test_min_stores
+
+    return allocations
+
+
+# Contract: compute_distance_fairness_metrics returns per-visitor distance stats.
+def compute_distance_fairness_metrics(
+    visitors: list[dict],
+    allocations: dict[int, list[Store]],
+) -> dict:
+    visitor_distances: dict[int, float] = {}
+    for visitor in visitors:
+        vid = visitor["visitor_id"]
+        stores = allocations.get(vid, [])
+        if not stores:
+            visitor_distances[vid] = 0.0
+            continue
+        total = 0.0
+        lat = float(visitor["start_lat"]) if visitor["start_lat"] is not None else None
+        lon = float(visitor["start_lon"]) if visitor["start_lon"] is not None else None
+        for store in stores:
+            if lat is not None and lon is not None:
+                total += _haversine_km(lat, lon, float(store.lat), float(store.lon))
+            lat = float(store.lat)
+            lon = float(store.lon)
+        visitor_distances[vid] = round(total, 3)
+
+    if not visitor_distances:
+        return {
+            "mean_km": 0.0,
+            "min_km": 0.0,
+            "max_km": 0.0,
+            "std_dev_km": 0.0,
+            "max_deviation_pct": 0.0,
+            "is_balanced": True,
+            "per_visitor": {},
+        }
+
+    values = list(visitor_distances.values())
+    mean_km = sum(values) / len(values)
+    min_km = min(values)
+    max_km = max(values)
+    variance = sum((v - mean_km) ** 2 for v in values) / len(values) if values else 0.0
+    std_dev_km = variance**0.5
+
+    max_deviation_pct = 0.0
+    if mean_km > 0:
+        max_deviation_pct = max(abs(v - mean_km) / mean_km * 100.0 for v in values)
+
+    return {
+        "mean_km": round(mean_km, 3),
+        "min_km": round(min_km, 3),
+        "max_km": round(max_km, 3),
+        "std_dev_km": round(std_dev_km, 3),
+        "max_deviation_pct": round(max_deviation_pct, 2),
+        "is_balanced": bool(max_deviation_pct <= DISTANCE_BALANCE_TOLERANCE_PCT),
+        "per_visitor": visitor_distances,
+    }
+
+
 # Contract: generate_draft_assignments executes one deterministic step in the workflow.
 def generate_draft_assignments(
     db: Session,
     work_date: date,
     manager_user_id: int,
     replace_existing_draft: bool = True,
+    balance_distance: bool = False,
 ) -> dict:
     _assert_manager_user(db, manager_user_id)
-    scheduling_service.prepare_schedule_state_for_date(db=db, target_date=work_date)  # FIX: [ARCH-03] Move schedule-state writes to manager pipeline path.
+    scheduling_service.prepare_schedule_state_for_date(
+        db=db, target_date=work_date
+    )  # FIX: [ARCH-03] Move schedule-state writes to manager pipeline path.
 
-    existing_non_draft_count = assignment_repository.count_non_draft_assignments_for_date(
-        db=db,
-        work_date=work_date,
+    existing_non_draft_count = (
+        assignment_repository.count_non_draft_assignments_for_date(
+            db=db,
+            work_date=work_date,
+        )
     )
     if existing_non_draft_count > 0:
         raise DomainError(err("non_draft_exists_block_regen"))
@@ -247,7 +526,23 @@ def generate_draft_assignments(
 
     visitors = get_active_visitor_day_contexts(db, work_date)
     due_stores = _get_due_stores_sorted(db, work_date)
-    allocations = _geo_capacity_allocate_stores(visitors=visitors, due_stores=due_stores)
+
+    if balance_distance:
+        allocations = _geo_capacity_allocate_stores_balanced(
+            visitors=visitors,
+            due_stores=due_stores,
+        )
+    else:
+        allocations = _geo_capacity_allocate_stores(
+            visitors=visitors,
+            due_stores=due_stores,
+        )
+
+    # Compute fairness metrics regardless of allocation mode.
+    fairness = compute_distance_fairness_metrics(
+        visitors=visitors,
+        allocations=allocations,
+    )
 
     created_count = 0
     assigned_store_ids: set[int] = set()
@@ -275,7 +570,9 @@ def generate_draft_assignments(
         db.rollback()
         raise
 
-    unassigned_store_ids = [store.id for store in due_stores if store.id not in assigned_store_ids]
+    unassigned_store_ids = [
+        store.id for store in due_stores if store.id not in assigned_store_ids
+    ]
     return {
         "work_date": work_date.isoformat(),
         "active_visitors": len(visitors),
@@ -283,6 +580,8 @@ def generate_draft_assignments(
         "created_assignments": created_count,
         "unassigned_due_stores": len(unassigned_store_ids),
         "unassigned_store_ids": unassigned_store_ids,
+        "balance_distance": bool(balance_distance),
+        "fairness": fairness,
     }
 
 
@@ -293,7 +592,9 @@ def get_unassigned_due_store_ids(db: Session, work_date: date) -> list[int]:
         return []
 
     assigned_store_ids = set(
-        assignment_repository.list_assigned_store_ids_for_date(db=db, work_date=work_date)
+        assignment_repository.list_assigned_store_ids_for_date(
+            db=db, work_date=work_date
+        )
     )
     return sorted(due_store_ids - assigned_store_ids)
 
@@ -362,13 +663,17 @@ def approve_visitor_route_for_work_date(
 
 # Contract: get_work_date_operational_snapshot executes one deterministic step in the workflow.
 def get_work_date_operational_snapshot(db: Session, work_date: date) -> dict:
-    assignment_count = assignment_repository.count_assignments_for_date(db=db, work_date=work_date)
+    assignment_count = assignment_repository.count_assignments_for_date(
+        db=db, work_date=work_date
+    )
     status_counts = assignment_repository.count_assignments_grouped_by_status(
         db=db,
         work_date=work_date,
     )
     draft_count = int(status_counts.get(AssignmentStatus.DRAFT.value, 0))
-    supervisor_approved_count = int(status_counts.get(AssignmentStatus.SUPERVISOR_APPROVED.value, 0))
+    supervisor_approved_count = int(
+        status_counts.get(AssignmentStatus.SUPERVISOR_APPROVED.value, 0)
+    )
     published_count = int(status_counts.get(AssignmentStatus.PUBLISHED.value, 0))
     completed_count = int(status_counts.get(AssignmentStatus.COMPLETED.value, 0))
     skipped_count = int(status_counts.get(AssignmentStatus.SKIPPED.value, 0))
@@ -415,9 +720,13 @@ def reset_draft_assignments_for_date(
     _assert_manager_user(db=db, manager_user_id=manager_user_id)
     snapshot = get_work_date_operational_snapshot(db=db, work_date=work_date)
     if snapshot["visit_count"] > 0 or snapshot["followup_count"] > 0:
-        raise DomainError("برای این تاریخ ویزیت یا پیگیری ثبت شده است؛ فقط پاک‌سازی کامل مجاز است.")
+        raise DomainError(
+            "برای این تاریخ ویزیت یا پیگیری ثبت شده است؛ فقط پاک‌سازی کامل مجاز است."
+        )
 
-    deleted_count = assignment_repository.delete_draft_assignments_for_date(db=db, work_date=work_date)
+    deleted_count = assignment_repository.delete_draft_assignments_for_date(
+        db=db, work_date=work_date
+    )
     db.commit()
     return {
         "work_date": work_date.isoformat(),
@@ -458,9 +767,11 @@ def _rebuild_store_schedule_state_from_history(
     for visit_date, result in visit_rows:
         events.append((visit_date, 0, "visit", result))
 
-    followup_rows = telesales_followup_repository.list_finalized_followup_events_for_store(
-        db=db,
-        store_id=store_id,
+    followup_rows = (
+        telesales_followup_repository.list_finalized_followup_events_for_store(
+            db=db,
+            store_id=store_id,
+        )
     )
     for followup_date, result in followup_rows:
         events.append((followup_date, 1, "followup", result))
@@ -487,7 +798,9 @@ def _rebuild_store_schedule_state_from_history(
 
 
 # Contract: flush_work_date_operational_data executes one deterministic step in the workflow.
-def flush_work_date_operational_data(db: Session, work_date: date, manager_user_id: int) -> dict:
+def flush_work_date_operational_data(
+    db: Session, work_date: date, manager_user_id: int
+) -> dict:
     _assert_manager_user(db, manager_user_id)
 
     assignment_rows = assignment_repository.list_assignment_ids_and_store_ids_for_date(
@@ -613,7 +926,9 @@ def evaluate_route_quality_vs_round_robin(db: Session, work_date: date) -> dict:
                 row["store_code"],
             ),
         )
-        current_total_km += _calculate_path_length_for_rows(start_lat, start_lon, ordered_rows)
+        current_total_km += _calculate_path_length_for_rows(
+            start_lat, start_lon, ordered_rows
+        )
 
     all_stores = []
     for rows in rows_by_visitor.values():
@@ -624,7 +939,9 @@ def evaluate_route_quality_vs_round_robin(db: Session, work_date: date) -> dict:
     if not visitor_ids:
         visitor_ids = sorted(context_by_visitor_id.keys())
 
-    baseline_assignments: dict[int, list[dict]] = {visitor_id: [] for visitor_id in visitor_ids}
+    baseline_assignments: dict[int, list[dict]] = {
+        visitor_id: [] for visitor_id in visitor_ids
+    }
     for idx, store in enumerate(all_stores):
         target_visitor_id = visitor_ids[idx % len(visitor_ids)]
         baseline_assignments[target_visitor_id].append(store)
@@ -653,15 +970,21 @@ def evaluate_route_quality_vs_round_robin(db: Session, work_date: date) -> dict:
             indexed_rows,
             key=lambda row: planned_by_assignment_id.get(
                 row[0],
-                routing_service.RouteStop(assignment_id=0, route_order=10**9, route_distance_km=None),
+                routing_service.RouteStop(
+                    assignment_id=0, route_order=10**9, route_distance_km=None
+                ),
             ).route_order,
         )
         ordered_rows = [row for _, row in ordered_indexed_rows]
-        baseline_total_km += _calculate_path_length_for_rows(start_lat, start_lon, ordered_rows)
+        baseline_total_km += _calculate_path_length_for_rows(
+            start_lat, start_lon, ordered_rows
+        )
 
     improvement_pct = 0.0
     if baseline_total_km > 0:
-        improvement_pct = ((baseline_total_km - current_total_km) / baseline_total_km) * 100.0
+        improvement_pct = (
+            (baseline_total_km - current_total_km) / baseline_total_km
+        ) * 100.0
 
     return {
         "work_date": work_date.isoformat(),

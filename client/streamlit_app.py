@@ -4,6 +4,10 @@
 import sys
 from pathlib import Path
 
+# Load .env before any server config modules are imported so env vars are set.
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+
 import streamlit as st
 from PIL import Image
 

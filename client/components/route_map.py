@@ -178,9 +178,15 @@ def _build_marker_rows(store_points: pd.DataFrame) -> list[dict]:
                 "store_code": str(_to_py_scalar(row.get("store_code")) or ""),
                 "store_name": str(_to_py_scalar(row.get("store_name")) or ""),
                 "store_grade": store_grade or _DEFAULT_GRADE_STYLE["label"],
-                "assignment_status": str(_to_py_scalar(row.get("assignment_status")) or ""),
-                "route_order": int(route_order_value) if route_order_value is not None else None,
-                "route_label": f"{int(route_order_value)}" if route_order_value is not None else "",
+                "assignment_status": str(
+                    _to_py_scalar(row.get("assignment_status")) or ""
+                ),
+                "route_order": int(route_order_value)
+                if route_order_value is not None
+                else None,
+                "route_label": f"{int(route_order_value)}"
+                if route_order_value is not None
+                else "",
                 "marker_fill": grade_style["fill"],
                 "marker_stroke": grade_style["stroke"],
             }
@@ -204,6 +210,82 @@ def _resolve_tile_service_base(runtime_status: dict[str, object]) -> str:
     return ""
 
 
+# Contract: _parse_vector_bounds normalizes runtime vector bounds into [min_lon, min_lat, max_lon, max_lat].
+def _parse_vector_bounds(runtime_status: dict[str, object]) -> list[float] | None:
+    raw_bounds = runtime_status.get("vector_bounds")
+    if not isinstance(raw_bounds, (list, tuple)) or len(raw_bounds) != 4:
+        return None
+    try:
+        min_lon = float(raw_bounds[0])
+        min_lat = float(raw_bounds[1])
+        max_lon = float(raw_bounds[2])
+        max_lat = float(raw_bounds[3])
+    except (TypeError, ValueError):
+        return None
+    if min_lon >= max_lon or min_lat >= max_lat:
+        return None
+    return [min_lon, min_lat, max_lon, max_lat]
+
+
+# Contract: _is_point_inside_bounds checks whether lat/lon falls inside [min_lon, min_lat, max_lon, max_lat].
+def _is_point_inside_bounds(lat: float, lon: float, bounds: list[float]) -> bool:
+    min_lon, min_lat, max_lon, max_lat = bounds
+    return (
+        min_lon <= float(lon) <= max_lon and min_lat <= float(lat) <= max_lat
+    )
+
+
+# Contract: _build_vector_fit_coordinates prioritizes points inside vector coverage for fitBounds.
+def _build_vector_fit_coordinates(
+    marker_rows: list[dict],
+    start_point: tuple[float, float] | None,
+    runtime_status: dict[str, object],
+) -> list[list[float]]:
+    all_coords_lon_lat: list[list[float]] = []
+    if start_point is not None:
+        all_coords_lon_lat.append([float(start_point[1]), float(start_point[0])])
+    all_coords_lon_lat.extend(
+        [[float(m["lon"]), float(m["lat"])] for m in marker_rows]
+    )
+    if not all_coords_lon_lat:
+        return []
+
+    bounds = _parse_vector_bounds(runtime_status)
+    if bounds is None:
+        return all_coords_lon_lat
+
+    inside_coords = [
+        coord
+        for coord in all_coords_lon_lat
+        if _is_point_inside_bounds(coord[1], coord[0], bounds)
+    ]
+    return inside_coords if inside_coords else all_coords_lon_lat
+
+
+# Contract: _count_markers_outside_vector_bounds reports store markers outside vector tile coverage.
+def _count_markers_outside_vector_bounds(
+    marker_rows: list[dict],
+    runtime_status: dict[str, object],
+) -> tuple[int, int]:
+    total_count = len(marker_rows)
+    if total_count == 0:
+        return 0, 0
+
+    bounds = _parse_vector_bounds(runtime_status)
+    if bounds is None:
+        return 0, total_count
+
+    outside_count = 0
+    for marker in marker_rows:
+        if not _is_point_inside_bounds(
+            float(marker["lat"]),
+            float(marker["lon"]),
+            bounds,
+        ):
+            outside_count += 1
+    return outside_count, total_count
+
+
 # Contract: _render_runtime_badge displays one compact status strip for OSRM/Tile health.
 def _render_runtime_badge(runtime_status: dict[str, object]) -> None:
     osrm_on = bool(runtime_status.get("osrm_up", False))
@@ -211,6 +293,10 @@ def _render_runtime_badge(runtime_status: dict[str, object]) -> None:
     tile_mode = str(runtime_status.get("tile_mode") or "none")
     render_engine = str(runtime_status.get("render_engine") or "leaflet_minimal")
     vector_style_ready = bool(runtime_status.get("vector_style_ready", False))
+    vector_dataset_id = str(runtime_status.get("vector_dataset_id") or "—").strip() or "—"
+    using_public_raster_fallback = bool(
+        runtime_status.get("using_public_raster_fallback", False)
+    )
     osrm_latency = runtime_status.get("osrm_latency_ms")
     tiles_latency = runtime_status.get("tiles_latency_ms")
     checked_at = str(runtime_status.get("checked_at") or "—")
@@ -221,7 +307,9 @@ def _render_runtime_badge(runtime_status: dict[str, object]) -> None:
     tile_color = "#27AE60" if tiles_on else "#E74C3C"
     osrm_latency_text = f"{osrm_latency}ms" if osrm_latency is not None else "—"
     tile_latency_text = f"{tiles_latency}ms" if tiles_latency is not None else "—"
-    mode_title = {"raster": "Raster", "vector": "Vector", "none": "None"}.get(tile_mode, tile_mode)
+    mode_title = {"raster": "Raster", "vector": "Vector", "none": "None"}.get(
+        tile_mode, tile_mode
+    )
     state_text = str(runtime_status.get("overall_state") or "DOWN")
     engine_text = {
         "maplibre_vector": "MapLibre Vector",
@@ -238,6 +326,8 @@ def _render_runtime_badge(runtime_status: dict[str, object]) -> None:
             <span style="margin-left:1rem;">Tile: <strong style="color:{tile_color};">{tile_text}</strong> ({tile_latency_text})</span>
             <span style="margin-left:1rem;">Render: <strong>{engine_text}</strong></span>
             <span style="margin-left:1rem;">Vector Style: <strong>{vector_style_text}</strong></span>
+            <span style="margin-left:1rem;">Vector Dataset: <strong>{vector_dataset_id}</strong></span>
+            <span style="margin-left:1rem;">Raster Fallback: <strong>{'ON' if using_public_raster_fallback else 'OFF'}</strong></span>
             <span style="margin-left:1rem;">حالت Tile: <strong>{mode_title}</strong></span>
             <span style="margin-left:1rem;">وضعیت کلی: <strong>{state_text}</strong></span>
             <span>آخرین بررسی: <strong>{checked_at}</strong></span>
@@ -261,7 +351,9 @@ def _render_leaflet_map(
     leaflet_js = _load_leaflet_js()
     leaflet_css = _load_leaflet_css()
     if not leaflet_js or not leaflet_css:
-        st.warning("فایل‌های محلی Leaflet پیدا نشد. پوشه assets/vendor/leaflet را بررسی کنید.")
+        st.warning(
+            "فایل‌های محلی Leaflet پیدا نشد. پوشه assets/vendor/leaflet را بررسی کنید."
+        )
         return
 
     map_id = f"route-map-{uuid4().hex}"
@@ -274,13 +366,25 @@ def _render_leaflet_map(
     payload = {
         "center": [sum(lats) / len(lats), sum(lons) / len(lons)],  # lat, lon
         "zoom": 11,
-        "start": [float(start_point[0]), float(start_point[1])] if start_point is not None else None,
+        "start": [float(start_point[0]), float(start_point[1])]
+        if start_point is not None
+        else None,
         "markers": marker_rows,
-        "path": [[float(pair[1]), float(pair[0])] for pair in path_points_lon_lat],  # lat, lon
+        "path": [
+            [float(pair[1]), float(pair[0])] for pair in path_points_lon_lat
+        ],  # lat, lon
         "tile_url_template": str(runtime_status.get("tile_url_template") or "").strip(),
-        "tile_attribution": str(config.MAP_TILE_ATTRIBUTION or "").strip(),
-        "tile_enabled": bool(runtime_status.get("tiles_up", False))
-        and str(runtime_status.get("tile_mode") or "") == "raster",
+        "tile_attribution": str(
+            runtime_status.get("public_raster_fallback_attribution")
+            or config.MAP_TILE_ATTRIBUTION
+            or ""
+        ).strip(),
+        # FIX: Enable tile layer when any tile URL is available, not only in raster mode.
+        # The raster style URL (/styles/basic/{z}/{x}/{y}.png) is often served even when
+        # tile_mode is "vector", providing a usable basemap for the Leaflet renderer.
+        "tile_enabled": bool(
+            str(runtime_status.get("tile_url_template") or "").strip()
+        ),
     }
     payload_json = json.dumps(payload, ensure_ascii=False)
 
@@ -389,11 +493,13 @@ def _render_maplibre_vector_map(
     runtime_status: dict[str, object],
 ) -> tuple[str, str | None]:
     if not marker_rows:
-        st.info("??????? ???? ????? ??? ???? ???? ?????.")
+        st.info("داده\u200cای برای نمایش روی نقشه وجود ندارد.")
         return "none", "no_markers"
 
     tile_base = _resolve_tile_service_base(runtime_status)
     vector_tile_template = str(runtime_status.get("vector_tile_template") or "").strip()
+    vector_dataset_id = str(runtime_status.get("vector_dataset_id") or "").strip()
+    vector_bounds = _parse_vector_bounds(runtime_status)
     vector_layers_available = [
         str(layer).strip()
         for layer in (runtime_status.get("vector_layers_available") or [])
@@ -402,9 +508,15 @@ def _render_maplibre_vector_map(
     vector_style_ready = bool(runtime_status.get("vector_style_ready", False))
 
     if not tile_base or not vector_tile_template or not vector_style_ready:
-        runtime_status["vector_render_error"] = runtime_status.get("vector_render_error") or "vector_style_unavailable"
-        _render_leaflet_map(marker_rows, path_points_lon_lat, start_point, runtime_status)
-        return "leaflet_minimal", str(runtime_status.get("vector_render_error") or "vector_style_unavailable")
+        runtime_status["vector_render_error"] = (
+            runtime_status.get("vector_render_error") or "vector_style_unavailable"
+        )
+        _render_leaflet_map(
+            marker_rows, path_points_lon_lat, start_point, runtime_status
+        )
+        return "leaflet_minimal", str(
+            runtime_status.get("vector_render_error") or "vector_style_unavailable"
+        )
 
     map_id = f"route-map-vector-{uuid4().hex}"
     lats = [float(m["lat"]) for m in marker_rows]
@@ -417,8 +529,13 @@ def _render_maplibre_vector_map(
     start_feature = (
         {
             "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [float(start_point[1]), float(start_point[0])]},
-            "properties": {"title": "???? ???? ???????"},
+            "geometry": {
+                "type": "Point",
+                "coordinates": [float(start_point[1]), float(start_point[0])],
+            },
+            "properties": {
+                "title": "\u0646\u0642\u0637\u0647 \u0634\u0631\u0648\u0639 \u0648\u06cc\u0632\u06cc\u062a\u0648\u0631"
+            },
         }
         if start_point is not None
         else None
@@ -427,7 +544,9 @@ def _render_maplibre_vector_map(
         {
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": path_points_lon_lat},
-            "properties": {"name": "???? ????????"},
+            "properties": {
+                "name": "\u0645\u0633\u06cc\u0631 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc"
+            },
         }
         if len(path_points_lon_lat) > 1
         else None
@@ -435,13 +554,20 @@ def _render_maplibre_vector_map(
     stop_features = [
         {
             "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [float(m["lon"]), float(m["lat"])]},
+            "geometry": {
+                "type": "Point",
+                "coordinates": [float(m["lon"]), float(m["lat"])],
+            },
             "properties": {
                 "store_code": str(m.get("store_code") or ""),
                 "store_name": str(m.get("store_name") or ""),
-                "store_grade": str(m.get("store_grade") or "??????"),
+                "store_grade": str(
+                    m.get("store_grade") or "\u0646\u0627\u0645\u0634\u062e\u0635"
+                ),
                 "assignment_status": str(m.get("assignment_status") or "?"),
-                "route_order": int(m["route_order"]) if m.get("route_order") is not None else None,
+                "route_order": int(m["route_order"])
+                if m.get("route_order") is not None
+                else None,
                 "route_label": str(m.get("route_label") or ""),
                 "marker_fill": str(m.get("marker_fill") or "#6B7280"),
                 "marker_stroke": str(m.get("marker_stroke") or "#374151"),
@@ -449,6 +575,11 @@ def _render_maplibre_vector_map(
         }
         for m in marker_rows
     ]
+    fit_coordinates = _build_vector_fit_coordinates(
+        marker_rows=marker_rows,
+        start_point=start_point,
+        runtime_status=runtime_status,
+    )
 
     payload = {
         "map_id": map_id,
@@ -456,11 +587,20 @@ def _render_maplibre_vector_map(
         "center": center,  # lon, lat
         "zoom": 11,
         "vector_tile_template": vector_tile_template,
+        "vector_dataset_id": vector_dataset_id or None,
+        "vector_bounds": vector_bounds,
         "vector_layers_available": vector_layers_available,
+        "fit_coordinates": fit_coordinates,
         "fonts_enabled": bool(runtime_status.get("fonts_available", False)),
         "start_feature": start_feature,
         "route_feature": route_feature,
-        "stops_feature_collection": {"type": "FeatureCollection", "features": stop_features},
+        "stops_feature_collection": {
+            "type": "FeatureCollection",
+            "features": stop_features,
+        },
+        # FIX: Pass raster tile URL so Leaflet fallback can show basemap tiles.
+        "tile_url_template": str(runtime_status.get("tile_url_template") or "").strip(),
+        "tile_attribution": str(config.MAP_TILE_ATTRIBUTION or "").strip(),
     }
     payload_json = json.dumps(payload, ensure_ascii=False)
     leaflet_js = _load_leaflet_js()
@@ -537,13 +677,23 @@ def _render_maplibre_vector_map(
           if (!container) return;
 
           if (!ensureLeafletRuntime()) {{
-            container.innerHTML = '<div style="padding:1rem;direction:rtl;text-align:right;color:#6B7280;">Basemap ?? ????? ????? ???? ??????? ????? ???? ??????.</div>';
+            container.innerHTML = '<div style="padding:1rem;direction:rtl;text-align:right;color:#6B7280;">Basemap در دسترس نیست. مارکرها و مسیر بدون نقشه پایه نمایش داده می\u200cشوند.</div>';
             return;
           }}
 
           container.classList.add("leaflet-fallback-map");
           const fallbackMap = window.L.map(payload.map_id, {{ zoomControl: true }});
           fallbackMap.setView([payload.center[1], payload.center[0]], payload.zoom || 11);
+
+          // FIX: Add raster tile layer in Leaflet fallback so basemap streets are visible.
+          if (payload.tile_url_template) {{
+            const tileLayer = window.L.tileLayer(
+              payload.tile_url_template,
+              {{ maxZoom: 19, attribution: payload.tile_attribution || "Local Tiles" }}
+            );
+            tileLayer.on("tileerror", function() {{ /* Keep route visible even if tiles fail */ }});
+            tileLayer.addTo(fallbackMap);
+          }}
 
           const routeLatLon = [];
           if (payload.route_feature && payload.route_feature.geometry && Array.isArray(payload.route_feature.geometry.coordinates)) {{
@@ -565,7 +715,7 @@ def _render_maplibre_vector_map(
               fillColor: "#3D5FCC",
               fillOpacity: 1,
               weight: 2
-            }}).addTo(fallbackMap).bindPopup("???? ???? ???????");
+            }}).addTo(fallbackMap).bindPopup("\u0646\u0642\u0637\u0647 \u0634\u0631\u0648\u0639 \u0648\u06cc\u0632\u06cc\u062a\u0648\u0631");
           }}
 
           const bounds = [];
@@ -593,10 +743,10 @@ def _render_maplibre_vector_map(
             const routeOrder = p.route_order !== null && p.route_order !== undefined ? String(p.route_order) : "?";
             marker.bindPopup(
               '<div style="direction:rtl;text-align:right;font-family:IRANSansFaNum,IRANSans FaNum,Vazirmatn,IRAN Sans,Tahoma,Arial,sans-serif;line-height:1.8;">' +
-              '<b>???????:</b> ' + String(p.store_code || "") + ' ? ' + String(p.store_name || "") + '<br/>' +
-              '<b>????:</b> ' + String(p.store_grade || "??????") + '<br/>' +
-              '<b>????? ????:</b> ' + routeOrder + '<br/>' +
-              '<b>?????:</b> ' + String(p.assignment_status || "?") +
+              '<b>\u0641\u0631\u0648\u0634\u06af\u0627\u0647:</b> ' + String(p.store_code || "") + ' \u2014 ' + String(p.store_name || "") + '<br/>' +
+              '<b>\u06af\u0631\u06cc\u062f:</b> ' + String(p.store_grade || "\u0646\u0627\u0645\u0634\u062e\u0635") + '<br/>' +
+              '<b>\u062a\u0631\u062a\u06cc\u0628 \u0645\u0633\u06cc\u0631:</b> ' + routeOrder + '<br/>' +
+              '<b>\u0648\u0636\u0639\u06cc\u062a:</b> ' + String(p.assignment_status || "\u2014") +
               '</div>'
             );
             bounds.push([coords[1], coords[0]]);
@@ -717,10 +867,10 @@ def _render_maplibre_vector_map(
                 const p = f.properties || {{}};
                 const routeOrder = p.route_order ? String(p.route_order) : "?";
                 const html =
-                  "<div><b>???????:</b> " + (p.store_code || "") + " ? " + (p.store_name || "") + "<br/>" +
-                  "<b>????:</b> " + (p.store_grade || "??????") + "<br/>" +
-                  "<b>????? ????:</b> " + routeOrder + "<br/>" +
-                  "<b>?????:</b> " + (p.assignment_status || "?") + "</div>";
+                  "<div><b>\u0641\u0631\u0648\u0634\u06af\u0627\u0647:</b> " + (p.store_code || "") + " \u2014 " + (p.store_name || "") + "<br/>" +
+                  "<b>\u06af\u0631\u06cc\u062f:</b> " + (p.store_grade || "\u0646\u0627\u0645\u0634\u062e\u0635") + "<br/>" +
+                  "<b>\u062a\u0631\u062a\u06cc\u0628 \u0645\u0633\u06cc\u0631:</b> " + routeOrder + "<br/>" +
+                  "<b>\u0648\u0636\u0639\u06cc\u062a:</b> " + (p.assignment_status || "\u2014") + "</div>";
                 new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
               }});
               map.on("mouseenter", "bex-stop-circles", function() {{
@@ -731,15 +881,17 @@ def _render_maplibre_vector_map(
               }});
             }}
 
-            const bounds = new maplibregl.LngLatBounds();
-            if (payload.start_feature) {{
-              bounds.extend(payload.start_feature.geometry.coordinates);
-            }}
-            payload.stops_feature_collection.features.forEach((feature) => {{
-              bounds.extend(feature.geometry.coordinates);
-            }});
-            if (!bounds.isEmpty()) {{
-              map.fitBounds(bounds, {{ padding: 30, maxZoom: 14 }});
+            const fitCoords = Array.isArray(payload.fit_coordinates) ? payload.fit_coordinates : [];
+            if (fitCoords.length > 0) {{
+              const bounds = new maplibregl.LngLatBounds();
+              fitCoords.forEach((coord) => {{
+                if (Array.isArray(coord) && coord.length === 2) {{
+                  bounds.extend(coord);
+                }}
+              }});
+              if (!bounds.isEmpty()) {{
+                map.fitBounds(bounds, {{ padding: 30, maxZoom: 14 }});
+              }}
             }}
             overlaysReady = true;
           }} catch (_overlayErr) {{
@@ -800,7 +952,9 @@ def render_route_map(
     start_point = _extract_start_point(store_points, start_lat, start_lon)
     marker_rows = _build_marker_rows(store_points)
     ordered_points = store_points.dropna(subset=["route_order"]).sort_values(
-        ["route_order", "store_code"] if "store_code" in store_points.columns else ["route_order"]
+        ["route_order", "store_code"]
+        if "store_code" in store_points.columns
+        else ["route_order"]
     )
     path_points, geometry_source = _build_route_geometry_path(
         start_point=start_point,
@@ -808,8 +962,14 @@ def render_route_map(
         runtime_status=effective_runtime_status,
     )
 
+    # FIX: Use render_engine (resolved by runtime_health_service) instead of raw tile_mode
+    # to select the correct map renderer. This respects MAP_RENDER_ENGINE config and
+    # vector_style_ready checks that already happened during health probe.
     tile_mode = str(effective_runtime_status.get("tile_mode") or "none")
-    if tile_mode == "vector":
+    render_engine = str(
+        effective_runtime_status.get("render_engine") or "leaflet_minimal"
+    )
+    if render_engine == "maplibre_vector":
         _render_maplibre_vector_map(
             marker_rows=marker_rows,
             path_points_lon_lat=path_points,
@@ -849,9 +1009,47 @@ def render_route_map(
     else:
         st.caption("مبنای ترسیم مسیر: خط مستقیم بین نقاط (در دسترس نبودن OSRM محلی)")
 
-    if show_runtime_messages and not bool(effective_runtime_status.get("osrm_up", False)):
+    if show_runtime_messages and not bool(
+        effective_runtime_status.get("osrm_up", False)
+    ):
         st.warning("OSRM محلی در دسترس نیست؛ مسیر جاده‌ای بهینه نمایش داده نمی‌شود.")
-    if show_runtime_messages and not bool(effective_runtime_status.get("tiles_up", False)):
+    if show_runtime_messages and not bool(
+        effective_runtime_status.get("tiles_up", False)
+    ):
         st.warning("Tile server محلی در دسترس نیست؛ خیابان‌ها نمایش داده نمی‌شوند.")
-    if show_runtime_messages and tile_mode == "vector" and not bool(effective_runtime_status.get("fonts_available", False)):
-        st.info("Tile محلی از نوع وکتور خام است؛ نمایش نام خیابان‌ها ممکن است محدود باشد.")
+    if (
+        show_runtime_messages
+        and tile_mode == "vector"
+        and not bool(effective_runtime_status.get("fonts_available", False))
+    ):
+        st.info(
+            "Tile محلی از نوع وکتور خام است؛ نمایش نام خیابان‌ها ممکن است محدود باشد."
+        )
+    if show_runtime_messages and tile_mode == "vector":
+        outside_count, total_count = _count_markers_outside_vector_bounds(
+            marker_rows=marker_rows,
+            runtime_status=effective_runtime_status,
+        )
+        if total_count > 0 and outside_count > 0:
+            dataset_id = str(
+                effective_runtime_status.get("vector_dataset_id") or "current"
+            ).strip() or "current"
+            outside_ratio = outside_count / total_count
+            message = (
+                f"پوشش دیتاست وکتور فعلی ({dataset_id}) محدود است: "
+                f"{outside_count} از {total_count} نقطه خارج از محدوده MBTiles هستند؛ "
+                "برای این نقاط، خیابان‌ها خاکستری/خالی دیده می‌شوند. "
+                "برای پوشش کامل‌تر می‌توانید MBTiles ایران (یا محدوده بزرگ‌تر) را جایگزین کنید "
+                "و در صورت وجود چند دیتاست، MAP_VECTOR_DATASET_ID را روی دیتاست مناسب بگذارید."
+            )
+            if outside_ratio >= 0.35:
+                st.warning(message)
+            else:
+                st.info(message)
+
+    if show_runtime_messages and bool(
+        effective_runtime_status.get("using_public_raster_fallback", False)
+    ):
+        st.success(
+            "برای نمایش شمایل کامل نقشه (خیابان‌ها/نام معابر)، نقشه پایه رستر فعال شده است."
+        )

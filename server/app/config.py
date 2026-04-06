@@ -57,15 +57,46 @@ MAP_RENDER_ENGINE = os.getenv("MAP_RENDER_ENGINE", "auto").strip().lower()
 if MAP_RENDER_ENGINE not in {"auto", "leaflet_minimal", "maplibre_vector"}:
     MAP_RENDER_ENGINE = "auto"
 
+# Optional preferred vector dataset ID when tile server exposes multiple datasets
+# via /data.json (for example: tehran, iran).
+MAP_VECTOR_DATASET_ID = os.getenv("MAP_VECTOR_DATASET_ID", "").strip()
+
+# Base URL of local tile service (used when MAP_TILE_URL_TEMPLATE is empty and
+# vector tile auto-discovery is enabled).
+# Example: http://127.0.0.1:8080
+MAP_TILE_SERVICE_BASE = _offline_only_url(
+    os.getenv("MAP_TILE_SERVICE_BASE"),
+    "http://127.0.0.1:8080",
+).rstrip("/")
+
 # Local tile URL template used by the map iframe.
 # Example: http://127.0.0.1:8080/styles/basic/{z}/{x}/{y}.png
-MAP_TILE_URL_TEMPLATE = _offline_only_url(
-    os.getenv("MAP_TILE_URL_TEMPLATE"),
-    "http://127.0.0.1:8080/styles/basic/{z}/{x}/{y}.png",
-)
+# Set to empty string to skip raster probe and rely on vector tile auto-detection.
+_raw_tile_template = os.getenv("MAP_TILE_URL_TEMPLATE")
+if _raw_tile_template is not None and _raw_tile_template.strip() == "":
+    # Explicit empty value: disable raster tile URL so vector auto-detection is used.
+    MAP_TILE_URL_TEMPLATE = ""
+else:
+    MAP_TILE_URL_TEMPLATE = _offline_only_url(
+        _raw_tile_template,
+        f"{MAP_TILE_SERVICE_BASE}/styles/basic/{{z}}/{{x}}/{{y}}.png",
+    )
 
 # Attribution string for local tile providers.
 MAP_TILE_ATTRIBUTION = os.getenv("MAP_TILE_ATTRIBUTION", "Local Tiles").strip()
+
+# Optional internet/public raster fallback used only when local raster tiles are
+# unavailable (for example vector-only MBTiles with no styles/fonts).
+# Example: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+MAP_PUBLIC_RASTER_FALLBACK_URL = os.getenv(
+    "MAP_PUBLIC_RASTER_FALLBACK_URL",
+    "",
+).strip()
+
+MAP_PUBLIC_RASTER_FALLBACK_ATTRIBUTION = os.getenv(
+    "MAP_PUBLIC_RASTER_FALLBACK_ATTRIBUTION",
+    "© OpenStreetMap contributors",
+).strip()
 
 # FIX: [PERF-01] Fail-fast probe timeout for offline runtime dependencies.
 OFFLINE_HEALTH_TIMEOUT_SECONDS = _to_float(

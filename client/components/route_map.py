@@ -1005,9 +1005,17 @@ def render_route_map(
     )
 
     if geometry_source == "osrm":
-        st.caption("مبنای ترسیم مسیر: مسیر جاده‌ای OSRM محلی")
+        basis_text = "مبنای ترسیم مسیر: مسیر جاده‌ای OSRM محلی"
     else:
-        st.caption("مبنای ترسیم مسیر: خط مستقیم بین نقاط (در دسترس نبودن OSRM محلی)")
+        basis_text = "مبنای ترسیم مسیر: خط مستقیم بین نقاط (در دسترس نبودن OSRM محلی)"
+    st.markdown(
+        (
+            '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.15rem;">'
+            f"{basis_text}"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
 
     if show_runtime_messages and not bool(
         effective_runtime_status.get("osrm_up", False)

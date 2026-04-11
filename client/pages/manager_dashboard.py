@@ -111,7 +111,6 @@ def _run_apply_files_and_build_route(
     current_user: dict,
     stores_file,
     daily_file,
-    balance_distance: bool = False,
 ) -> dict:
     # FIX: [UX-06] Expose granular pipeline progress with checklist + progress bar.
     if daily_file is None:
@@ -250,7 +249,6 @@ def _run_apply_files_and_build_route(
                     work_date=work_date,
                     manager_user_id=current_user["id"],
                     replace_existing_draft=True,
-                    balance_distance=balance_distance,
                 )
                 _set_step(
                     "assign",
@@ -395,17 +393,27 @@ def _render_pipeline_result(result: dict) -> None:
             ("مسافت مسیر مبنا (قبل از بهینه‌سازی) (km)", quality["baseline_km"]),
             ("مسافت مسیر فعلی (بعد از بهینه‌سازی) (km)", quality["current_km"]),
             ("درصد بهبود مسیر", f"{quality['improvement_pct']}%"),
-            ("گیت کیفیت", gate_text),
+            ("وضعیت", gate_text),
         ]
     )
-    st.caption(
-        f"مسیر {route_summary.get('osrm_routed', 0)} ویزیتور با OSRM | "
-        f"{route_summary.get('nn_routed', 0)} ویزیتور با الگوریتم پشتیبان"
+    st.markdown(
+        (
+            '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.1rem;">'
+            f"مسیر {route_summary.get('osrm_routed', 0)} ویزیتور با OSRM | "
+            f"{route_summary.get('nn_routed', 0)} ویزیتور با الگوریتم پشتیبان"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
     )
     if int(route_summary.get("nn_routed", 0)) > 0:
-        st.caption(
-            "دلیل fallback: "
-            f"{_fallback_reason_fa(route_summary.get('fallback_reason'))}"
+        st.markdown(
+            (
+                '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.05rem;">'
+                "دلیل fallback: "
+                f"{_fallback_reason_fa(route_summary.get('fallback_reason'))}"
+                "</div>"
+            ),
+            unsafe_allow_html=True,
         )
     if (
         int(route_summary.get("osrm_routed", 0)) == 0
@@ -423,35 +431,7 @@ def _render_pipeline_result(result: dict) -> None:
             )
     if comparable and not quality["passes_gate"]:
         st.warning(
-            "گیت کیفیت عبور نکرده است. بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد."
-        )
-
-    # Distance fairness metrics display.
-    fairness = draft_summary.get("fairness") or {}
-    if fairness:
-        balance_mode = "فعال" if draft_summary.get("balance_distance") else "غیرفعال"
-        fairness_ok = fairness.get("is_balanced", True)
-        fairness_status = "متعادل" if fairness_ok else "نامتعادل"
-        fairness_color = "#27AE60" if fairness_ok else "#E74C3C"
-        render_metric_grid(
-            [
-                ("حالت تعادل مسافت", balance_mode),
-                ("میانگین مسافت ویزیتورها (km)", fairness.get("mean_km", 0.0)),
-                (
-                    "کمترین / بیشترین مسافت (km)",
-                    f"{fairness.get('min_km', 0.0)} / {fairness.get('max_km', 0.0)}",
-                ),
-                (
-                    "حداکثر انحراف از میانگین",
-                    f"{fairness.get('max_deviation_pct', 0.0)}%",
-                ),
-            ]
-        )
-        st.markdown(
-            f'<div style="direction:rtl;text-align:right;font-size:.85rem;margin:.2rem 0 .5rem;">'
-            f'وضعیت عدالت مسافت: <strong style="color:{fairness_color};">{fairness_status}</strong>'
-            f"</div>",
-            unsafe_allow_html=True,
+            "وضعیت ارزیابی رد شد. بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد."
         )
 
 
@@ -530,14 +510,6 @@ def render_manager_dashboard(current_user: dict) -> None:
                 disabled=is_hard_locked,
             )
 
-        balance_distance = st.checkbox(
-            "تعادل تقریبی مسافت بین ویزیتورها (حداکثر ۲۰٪ اختلاف از میانگین)",
-            value=True,
-            key=f"balance_distance_{work_date_iso}",
-            disabled=is_hard_locked,
-            help="فعال‌سازی این گزینه باعث می‌شود فروشگاه‌ها طوری تقسیم شوند که مسافت حرکت هر ویزیتور تقریباً برابر باشد.",
-        )
-
         if st.button(
             "اعمال فایل‌ها و ساخت مسیر",
             key=f"build_pipeline_{work_date_iso}",
@@ -555,7 +527,6 @@ def render_manager_dashboard(current_user: dict) -> None:
                     current_user=current_user,
                     stores_file=stores_file,
                     daily_file=daily_file,
-                    balance_distance=balance_distance,
                 )
                 st.session_state["manager_last_pipeline_result"] = result
                 st.session_state["manager_last_pipeline_date"] = work_date_iso
@@ -567,28 +538,6 @@ def render_manager_dashboard(current_user: dict) -> None:
         last_result = st.session_state.get("manager_last_pipeline_result")
         if isinstance(last_result, dict):
             _render_pipeline_result(last_result)
-
-    if visit_count == 0 and followup_count == 0:
-        if st.button(
-            "بازنشانی پیش‌نویس",
-            key=f"reset_draft_only_{work_date_iso}",
-            use_container_width=True,
-            disabled=int(snapshot.get("draft_count", 0)) == 0,
-        ):
-            try:
-                with get_db() as db:
-                    result = assignment_service.reset_draft_assignments_for_date(
-                        db=db,
-                        work_date=work_date,
-                        manager_user_id=current_user["id"],
-                    )
-                st.success(f"{result['deleted_draft_count']} تخصیص پیش‌نویس حذف شد.")
-                st.session_state.pop("manager_last_pipeline_result", None)
-                st.session_state.pop("manager_last_pipeline_date", None)
-                st.cache_data.clear()
-                st.rerun()
-            except Exception as exc:
-                st.error(f"خطا در بازنشانی پیش‌نویس: {exc}")
 
     with st.expander("پاک‌سازی کامل داده‌های همین تاریخ", expanded=False):
         has_operational_data = visit_count > 0 or followup_count > 0
@@ -707,6 +656,8 @@ def render_manager_dashboard(current_user: dict) -> None:
             assignment_view_df["store_grade"] = assignment_view_df[
                 "store_grade"
             ].fillna("نامشخص")
+        if "assignment_id" in assignment_view_df.columns:
+            assignment_view_df["assignment_id"] = range(1, len(assignment_view_df) + 1)
         render_rtl_table(
             assignment_view_df,
             key_prefix=f"manager_assignments_{work_date_iso}",

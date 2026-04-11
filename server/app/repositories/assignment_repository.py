@@ -251,6 +251,7 @@ def list_rows_for_assignment_table(db: Session, work_date: date) -> list[tuple]:
             DailyAssignment.route_order.is_(None),
             DailyAssignment.route_order,
             Store.store_code,
+            DailyAssignment.id,
         )
         .all()
     )

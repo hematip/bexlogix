@@ -8,6 +8,7 @@ from math import asin, cos, radians, sin, sqrt
 
 from sqlalchemy.orm import Session
 
+from server.app import config
 from server.app.enums.assignment_status import AssignmentStatus
 from server.app.enums.roles import UserRole
 from server.app.errors import (
@@ -280,40 +281,214 @@ def generate_draft_assignments(
 
     visitors = get_active_visitor_day_contexts(db, work_date)
     due_stores = _get_due_stores_sorted(db, work_date)
-    allocations = _geo_capacity_allocate_stores(
-        visitors=visitors,
-        due_stores=due_stores,
-    )
+
+    solver_mode_config = str(config.ROUTING_SOLVER_MODE or "auto").strip().lower()
+    shadow_enabled = bool(config.ROUTING_SHADOW_MODE)
+
+    store_by_id = {int(store.id): store for store in due_stores}
+    solver_store_rows = [
+        {
+            "store_id": int(store.id),
+            "store_code": str(store.store_code),
+            "lat": float(store.lat),
+            "lon": float(store.lon),
+        }
+        for store in due_stores
+    ]
+
+    vroom_result: routing_service.UnifiedRouteResult | None = None
+    if solver_mode_config in {"auto", "vroom"} and visitors and due_stores:
+        vroom_result = routing_service.solve_day_assignments_with_vroom(
+            visitors=visitors,
+            stores=solver_store_rows,
+            base_url=config.VROOM_BASE_URL,
+            timeout_seconds=config.VROOM_TIMEOUT_SECONDS,
+        )
+
+    shadow: dict | None = None
+    if shadow_enabled and solver_mode_config == "legacy" and visitors and due_stores:
+        shadow_candidate = routing_service.solve_day_assignments_with_vroom(
+            visitors=visitors,
+            stores=solver_store_rows,
+            base_url=config.VROOM_BASE_URL,
+            timeout_seconds=config.VROOM_TIMEOUT_SECONDS,
+        )
+        shadow = {
+            "enabled": True,
+            "status": (
+                "ok" if shadow_candidate.solver_mode == "vroom" else "failed"
+            ),
+            "solver_reason": shadow_candidate.solver_reason,
+            "assigned_count": int(len(shadow_candidate.assignments)),
+            "unassigned_count": int(len(shadow_candidate.unassigned_store_ids)),
+        }
 
     created_count = 0
     assigned_store_ids: set[int] = set()
+    unassigned_store_ids: list[int] = []
+    routes_precomputed = False
+    solver_mode = "legacy"
+    fallback_stage = None
+    solver_reason = None
+    route_summary: dict | None = None
 
-    try:
-        for visitor in visitors:
-            visitor_id = int(visitor["visitor_id"])
-            for store in allocations.get(visitor_id, []):
+    use_vroom_output = bool(vroom_result and vroom_result.solver_mode == "vroom")
+    if use_vroom_output:
+        solver_mode = "vroom"
+        routes_precomputed = True
+        visitor_by_id = {int(visitor["visitor_id"]): visitor for visitor in visitors}
+        raw_planned_assignments = sorted(
+            vroom_result.assignments,
+            key=lambda item: (item.visitor_id, item.route_order, item.store_id),
+        )
+        # Ensure per-visitor route_order always starts at 1 and stays contiguous.
+        planned_assignments: list[routing_service.PlannedAssignment] = []
+        by_visitor: dict[int, list[routing_service.PlannedAssignment]] = {}
+        for item in raw_planned_assignments:
+            store = store_by_id.get(int(item.store_id))
+            if store is None:
+                continue
+            by_visitor.setdefault(int(item.visitor_id), []).append(item)
+        for visitor_id in sorted(by_visitor.keys()):
+            ordered_rows = sorted(
+                by_visitor[visitor_id],
+                key=lambda item: (item.route_order, item.store_id),
+            )
+            visitor_ctx = visitor_by_id.get(int(visitor_id), {})
+            start_lat = visitor_ctx.get("start_lat")
+            start_lon = visitor_ctx.get("start_lon")
+            ordered_stop_rows: list[dict] = []
+            for item in ordered_rows:
+                store = store_by_id.get(int(item.store_id))
+                if store is None:
+                    continue
+                ordered_stop_rows.append(
+                    {
+                        "lat": float(store.lat),
+                        "lon": float(store.lon),
+                        "store_code": str(store.store_code),
+                    }
+                )
+            cumulative_distances = routing_service.fetch_osrm_cumulative_distances_km(
+                start_lat=float(start_lat) if start_lat is not None else None,
+                start_lon=float(start_lon) if start_lon is not None else None,
+                ordered_stops=ordered_stop_rows,
+            )
+            if (
+                cumulative_distances is None
+                or len(cumulative_distances) != len(ordered_stop_rows)
+            ):
+                cumulative_distances = []
+                if start_lat is None or start_lon is None:
+                    cumulative_distances = [None] * len(ordered_stop_rows)
+                else:
+                    total_km = 0.0
+                    current_lat = float(start_lat)
+                    current_lon = float(start_lon)
+                    for stop in ordered_stop_rows:
+                        total_km += _haversine_km(
+                            current_lat,
+                            current_lon,
+                            float(stop["lat"]),
+                            float(stop["lon"]),
+                        )
+                        cumulative_distances.append(round(total_km, 3))
+                        current_lat = float(stop["lat"])
+                        current_lon = float(stop["lon"])
+            for normalized_order, item in enumerate(ordered_rows, start=1):
+                distance_km: float | None = None
+                index = normalized_order - 1
+                if index < len(cumulative_distances):
+                    distance_km = cumulative_distances[index]
+                elif item.route_distance_km is not None:
+                    distance_km = float(item.route_distance_km)
+                planned_assignments.append(
+                    routing_service.PlannedAssignment(
+                        visitor_id=int(item.visitor_id),
+                        store_id=int(item.store_id),
+                        route_order=int(normalized_order),
+                        route_distance_km=distance_km,
+                    )
+                )
+        try:
+            for planned in planned_assignments:
                 db.add(
                     DailyAssignment(
                         work_date=work_date,
-                        visitor_id=visitor_id,
-                        store_id=store.id,
-                        route_order=None,
-                        route_distance_km=None,
+                        visitor_id=int(planned.visitor_id),
+                        store_id=int(planned.store_id),
+                        route_order=int(planned.route_order),
+                        route_distance_km=planned.route_distance_km,
                         assignment_status=AssignmentStatus.DRAFT.value,
                         generated_by=manager_user_id,
                     )
                 )
-                assigned_store_ids.add(store.id)
+                assigned_store_ids.add(int(planned.store_id))
                 created_count += 1
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
+        vroom_unassigned = {int(item) for item in vroom_result.unassigned_store_ids}
+        unassigned_store_ids = sorted(
+            vroom_unassigned.union(set(store_by_id.keys()) - assigned_store_ids)
+        )
+        vroom_visitor_ids = {
+            int(item.visitor_id) for item in planned_assignments if item.route_order > 0
+        }
+        route_summary = {
+            "total_assignments": int(created_count),
+            "total_visitors": int(len(visitors)),
+            "osrm_routed": 0,
+            "nn_routed": 0,
+            "vroom_routed": int(len(vroom_visitor_ids)),
+            "vroom_used": True,
+            "osrm_used": False,
+            "solver_mode": "vroom",
+            "fallback_stage": None,
+            "solver_reason": None,
+            "fallback_reason": None,
+            "fallback_reason_counts": {
+                "osrm_unavailable": 0,
+                "osrm_timeout": 0,
+                "osrm_invalid_response": 0,
+            },
+        }
+    else:
+        if vroom_result:
+            fallback_stage = vroom_result.fallback_stage
+            solver_reason = vroom_result.solver_reason
 
-    unassigned_store_ids = [
-        store.id for store in due_stores if store.id not in assigned_store_ids
-    ]
+        allocations = _geo_capacity_allocate_stores(
+            visitors=visitors,
+            due_stores=due_stores,
+        )
+        try:
+            for visitor in visitors:
+                visitor_id = int(visitor["visitor_id"])
+                for store in allocations.get(visitor_id, []):
+                    db.add(
+                        DailyAssignment(
+                            work_date=work_date,
+                            visitor_id=visitor_id,
+                            store_id=store.id,
+                            route_order=None,
+                            route_distance_km=None,
+                            assignment_status=AssignmentStatus.DRAFT.value,
+                            generated_by=manager_user_id,
+                        )
+                    )
+                    assigned_store_ids.add(store.id)
+                    created_count += 1
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        unassigned_store_ids = [
+            store.id for store in due_stores if store.id not in assigned_store_ids
+        ]
+
     return {
         "work_date": work_date.isoformat(),
         "active_visitors": len(visitors),
@@ -321,6 +496,12 @@ def generate_draft_assignments(
         "created_assignments": created_count,
         "unassigned_due_stores": len(unassigned_store_ids),
         "unassigned_store_ids": unassigned_store_ids,
+        "routes_precomputed": bool(routes_precomputed),
+        "solver_mode": solver_mode,
+        "fallback_stage": fallback_stage,
+        "solver_reason": solver_reason,
+        "route_summary": route_summary,
+        "shadow": shadow,
     }
 
 

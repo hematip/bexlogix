@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 from dataclasses import dataclass
 from datetime import date
 from math import asin, cos, radians, sin, sqrt
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,8 @@ from server.app import config
 from server.app.errors import DomainError, err
 from server.app.repositories import assignment_repository, visitor_repository
 from server.app.services import runtime_health_service
+
+logger = logging.getLogger(__name__)
 
 
 # Contract: RouteStop defines a typed boundary and should remain behavior-stable.
@@ -49,6 +52,23 @@ class RoutePlanner:
         return None
 
 
+@dataclass
+class PlannedAssignment:
+    visitor_id: int
+    store_id: int
+    route_order: int
+    route_distance_km: float | None
+
+
+@dataclass
+class UnifiedRouteResult:
+    assignments: list[PlannedAssignment]
+    unassigned_store_ids: list[int]
+    solver_mode: str
+    fallback_stage: str | None
+    solver_reason: str | None
+
+
 # Contract: _haversine_km executes one deterministic step in the workflow.
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius_km = 6371.0
@@ -76,6 +96,22 @@ def _request_osrm_payload(url: str, timeout_seconds: float) -> dict:
         status_code = getattr(response, "status", None)
         if status_code is not None and int(status_code) >= 400:
             raise ValueError(f"OSRM HTTP status: {status_code}")
+        return json.loads(response.read().decode("utf-8"))
+
+
+# Contract: _request_json_post executes one deterministic step in the workflow.
+def _request_json_post(url: str, timeout_seconds: float, payload: dict) -> dict:
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(
+        url=url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=timeout_seconds) as response:
+        status_code = getattr(response, "status", None)
+        if status_code is not None and int(status_code) >= 400:
+            raise ValueError(f"VROOM HTTP status: {status_code}")
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -300,6 +336,147 @@ class OSRMRoutePlanner(RoutePlanner):
         return self._last_fallback_reason
 
 
+# Contract: VroomRoutePlanner defines a typed boundary and should remain behavior-stable.
+class VroomRoutePlanner:
+    # Contract: __init__ executes one deterministic step in the workflow.
+    def __init__(
+        self,
+        base_url: str | None = None,
+        timeout_seconds: float | None = None,
+    ) -> None:
+        self.base_url = (base_url or config.VROOM_BASE_URL or "").strip().rstrip("/")
+        self.timeout_seconds = (
+            float(timeout_seconds)
+            if timeout_seconds is not None
+            else float(config.VROOM_TIMEOUT_SECONDS)
+        )
+
+    # Contract: _build_payload executes one deterministic step in the workflow.
+    def _build_payload(self, visitors: list[dict], stores: list[dict]) -> dict:
+        vehicles: list[dict] = []
+        for visitor in visitors:
+            start_lat = visitor.get("start_lat")
+            start_lon = visitor.get("start_lon")
+            if start_lat is None or start_lon is None:
+                raise ValueError("VROOM requires start_lat/start_lon for all active visitors.")
+            vehicles.append(
+                {
+                    "id": int(visitor["visitor_id"]),
+                    "profile": "car",
+                    "start": [float(start_lon), float(start_lat)],
+                    "capacity": [max(0, int(visitor.get("capacity") or 0))],
+                }
+            )
+
+        jobs: list[dict] = []
+        for store in stores:
+            jobs.append(
+                {
+                    "id": int(store["store_id"]),
+                    "location": [float(store["lon"]), float(store["lat"])],
+                    "service": 0,
+                    "amount": [1],
+                }
+            )
+        return {"vehicles": vehicles, "jobs": jobs}
+
+    # Contract: _parse_solution executes one deterministic step in the workflow.
+    def _parse_solution(self, payload: dict, stores: list[dict]) -> UnifiedRouteResult:
+        routes = payload.get("routes")
+        if not isinstance(routes, list):
+            raise ValueError("VROOM response has no routes.")
+
+        assignments: list[PlannedAssignment] = []
+        assigned_store_ids: set[int] = set()
+        for route in routes:
+            visitor_id_raw = route.get("vehicle")
+            if visitor_id_raw is None:
+                continue
+            visitor_id = int(visitor_id_raw)
+            route_order = 1
+            steps = route.get("steps") or []
+            for step in steps:
+                if str(step.get("type") or "").lower() != "job":
+                    continue
+                store_id_raw = step.get("job", step.get("id"))
+                if store_id_raw is None:
+                    continue
+                store_id = int(store_id_raw)
+                distance_raw = step.get("distance")
+                route_distance_km = (
+                    round(float(distance_raw) / 1000.0, 3)
+                    if distance_raw is not None
+                    else None
+                )
+                assignments.append(
+                    PlannedAssignment(
+                        visitor_id=visitor_id,
+                        store_id=store_id,
+                        route_order=route_order,
+                        route_distance_km=route_distance_km,
+                    )
+                )
+                assigned_store_ids.add(store_id)
+                route_order += 1
+
+        store_ids = {int(store["store_id"]) for store in stores}
+        unassigned_store_ids: set[int] = set()
+        unassigned_rows = payload.get("unassigned") or []
+        if isinstance(unassigned_rows, list):
+            for row in unassigned_rows:
+                if isinstance(row, dict):
+                    raw_id = row.get("id", row.get("job"))
+                else:
+                    raw_id = row
+                if raw_id is None:
+                    continue
+                try:
+                    unassigned_store_ids.add(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+
+        # Safety: VROOM may omit explicit unassigned rows in partial failures.
+        unassigned_store_ids.update(store_ids - assigned_store_ids)
+
+        assignments.sort(key=lambda item: (item.visitor_id, item.route_order, item.store_id))
+        return UnifiedRouteResult(
+            assignments=assignments,
+            unassigned_store_ids=sorted(unassigned_store_ids),
+            solver_mode="vroom",
+            fallback_stage=None,
+            solver_reason=None,
+        )
+
+    # Contract: solve_day executes one deterministic step in the workflow.
+    def solve_day(self, visitors: list[dict], stores: list[dict]) -> UnifiedRouteResult:
+        if not visitors:
+            return UnifiedRouteResult(
+                assignments=[],
+                unassigned_store_ids=sorted(int(store["store_id"]) for store in stores),
+                solver_mode="vroom",
+                fallback_stage=None,
+                solver_reason=None,
+            )
+        if not stores:
+            return UnifiedRouteResult(
+                assignments=[],
+                unassigned_store_ids=[],
+                solver_mode="vroom",
+                fallback_stage=None,
+                solver_reason=None,
+            )
+        if not self.base_url:
+            raise URLError("VROOM base URL is empty.")
+
+        payload = self._build_payload(visitors=visitors, stores=stores)
+        response = _request_json_post(
+            url=f"{self.base_url}/",
+            timeout_seconds=self.timeout_seconds,
+            payload=payload,
+        )
+        return self._parse_solution(payload=response, stores=stores)
+
+
 # Contract: _map_osrm_failure_reason executes one deterministic step in the workflow.
 def _map_osrm_failure_reason(exc: Exception) -> str:
     if isinstance(exc, ValueError):
@@ -318,6 +495,48 @@ def _map_osrm_failure_reason(exc: Exception) -> str:
             return "osrm_timeout"
         return "osrm_unavailable"
     return "osrm_invalid_response"
+
+
+# Contract: _map_vroom_failure_reason executes one deterministic step in the workflow.
+def _map_vroom_failure_reason(exc: Exception) -> str:
+    if isinstance(exc, TimeoutError):
+        return "vroom_timeout"
+    if isinstance(exc, socket.timeout):
+        return "vroom_timeout"
+    if isinstance(exc, HTTPError):
+        return "vroom_invalid_response"
+    if isinstance(exc, URLError):
+        reason = getattr(exc, "reason", None)
+        if isinstance(reason, TimeoutError) or isinstance(reason, socket.timeout):
+            return "vroom_timeout"
+        if reason and "timed out" in str(reason).lower():
+            return "vroom_timeout"
+        return "vroom_unavailable"
+    if isinstance(exc, ValueError):
+        return "vroom_invalid_response"
+    return "vroom_invalid_response"
+
+
+# Contract: solve_day_assignments_with_vroom executes one deterministic step in the workflow.
+def solve_day_assignments_with_vroom(
+    visitors: list[dict],
+    stores: list[dict],
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+) -> UnifiedRouteResult:
+    planner = VroomRoutePlanner(base_url=base_url, timeout_seconds=timeout_seconds)
+    try:
+        return planner.solve_day(visitors=visitors, stores=stores)
+    except Exception as exc:
+        reason = _map_vroom_failure_reason(exc)
+        logger.warning("VROOM failed; falling back to legacy pipeline. reason=%s", reason)
+        return UnifiedRouteResult(
+            assignments=[],
+            unassigned_store_ids=[],
+            solver_mode="legacy",
+            fallback_stage="vroom_to_legacy",
+            solver_reason=reason,
+        )
 
 
 # Contract: fetch_osrm_route_geometry executes one deterministic step in the workflow.
@@ -413,6 +632,68 @@ def fetch_osrm_route_geometry(
             segment_geometry.extend(leg_geometry)
 
     return segment_geometry
+
+
+# Contract: fetch_osrm_cumulative_distances_km executes one deterministic step in the workflow.
+def fetch_osrm_cumulative_distances_km(
+    start_lat: float | None,
+    start_lon: float | None,
+    ordered_stops: list[dict],
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+    runtime_status: dict[str, object] | None = None,
+) -> list[float] | None:
+    if start_lat is None or start_lon is None or not ordered_stops:
+        return None
+
+    resolved_base_url = (base_url or config.OSRM_BASE_URL or "").strip().rstrip("/")
+    if not resolved_base_url:
+        return None
+
+    resolved_runtime_status = (
+        dict(runtime_status)
+        if runtime_status is not None
+        else runtime_health_service.get_offline_runtime_status()
+    )
+    if not bool(resolved_runtime_status.get("osrm_up", False)):
+        return None
+
+    timeout = (
+        float(timeout_seconds)
+        if timeout_seconds is not None
+        else float(config.OSRM_TIMEOUT_SECONDS)
+    )
+    points = [(float(start_lat), float(start_lon))] + [
+        (float(stop["lat"]), float(stop["lon"])) for stop in ordered_stops
+    ]
+    if len(points) < 2:
+        return None
+
+    try:
+        encoded_coords = _build_osrm_coordinate_segment(points)
+        url = (
+            f"{resolved_base_url}/route/v1/driving/{encoded_coords}"
+            "?overview=false&steps=false&geometries=geojson"
+        )
+        payload = _request_osrm_payload(url=url, timeout_seconds=timeout)
+        if payload.get("code") != "Ok":
+            return None
+        routes = payload.get("routes") or []
+        if not routes:
+            return None
+        legs = routes[0].get("legs") or []
+        if len(legs) < len(ordered_stops):
+            return None
+
+        cumulative: list[float] = []
+        total_km = 0.0
+        for idx in range(len(ordered_stops)):
+            leg = legs[idx]
+            total_km += float(leg.get("distance") or 0.0) / 1000.0
+            cumulative.append(round(total_km, 3))
+        return cumulative
+    except Exception:
+        return None
 
 
 # Contract: _get_start_point executes one deterministic step in the workflow.
@@ -523,7 +804,12 @@ def apply_routes_for_work_date(db: Session, work_date: date, planner: RoutePlann
         "total_visitors": int(len(visitor_ids)),
         "osrm_routed": int(osrm_routed),
         "nn_routed": int(nn_routed),
+        "vroom_routed": 0,
+        "vroom_used": False,
         "osrm_used": bool(osrm_routed > 0),
+        "solver_mode": "legacy",
+        "fallback_stage": ("osrm_to_nn" if nn_routed > 0 else None),
+        "solver_reason": fallback_reason,
         "fallback_reason": fallback_reason,
         "fallback_reason_counts": fallback_reasons,
     }

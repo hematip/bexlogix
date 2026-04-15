@@ -11,7 +11,7 @@ BexLogix is an offline-first Streamlit application for field-sales operations.
 ## Core Daily Process
 1. Startup seed loads baseline `login.xlsx` and `stores.xlsx` when the database is empty.
 2. Manager uploads `visitors.xlsx` (daily visitor status) and optionally new `stores.xlsx`.
-3. System creates draft assignments, orders routes with local OSRM, and falls back to nearest-neighbor if needed.
+3. System creates draft assignments with offline solver mode (`auto|vroom|legacy`), uses local VROOM+OSRM when available, and falls back to nearest-neighbor if needed.
 4. Manager publishes assignments.
 5. Visitors submit visit results and notes.
 6. Red visits are pushed to telesales follow-up queue.
@@ -29,7 +29,7 @@ BexLogix is an offline-first Streamlit application for field-sales operations.
    - `pip install -r requirements.txt`
 2. Prepare OSRM graph once:
    - `./scripts/offline_prepare_osrm_tehran.ps1`
-3. Start local offline stack:
+3. Start local offline stack (OSRM + VROOM + tiles):
    - `./scripts/offline_up.ps1`
 4. Run app:
    - `streamlit run client/streamlit_app.py`
@@ -38,5 +38,12 @@ BexLogix is an offline-first Streamlit application for field-sales operations.
 
 ## Notes
 - The app is designed to run with no external internet dependency at runtime.
+- If local VROOM is unavailable, solver automatically falls back to legacy OSRM/NN pipeline.
 - If local OSRM is unavailable, route ordering automatically falls back to internal nearest-neighbor.
 - If local tiles are unavailable, map markers and route path still render without basemap tiles.
+
+## KPI Evaluation
+- Run offline routing KPI checks across work dates:
+  - `python scripts/routing_kpi_eval.py --min-days 20`
+- Optional: target specific dates:
+  - `python scripts/routing_kpi_eval.py --work-date 2026-04-01 --work-date 2026-04-02`

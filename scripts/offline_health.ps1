@@ -30,6 +30,7 @@ function Test-Url {
 }
 
 $osrmUrl = "http://127.0.0.1:5000/nearest/v1/driving/51.3890,35.6892?number=1"
+$vroomUrl = "http://127.0.0.1:3000/health"
 $stylesUrl = "http://127.0.0.1:8080/styles.json"
 $dataUrl = "http://127.0.0.1:8080/data.json"
 
@@ -40,6 +41,7 @@ do {
         $content = [string]$r.Content
         return $content.Contains('"code":"Ok"') -or $content.Contains('"code": "Ok"')
     }
+    $vroom = Test-Url -Url $vroomUrl
 
     $stylesProbe = Test-Url -Url $stylesUrl -Validator {
         param($r)
@@ -103,6 +105,7 @@ do {
     $tiles = $tileProbe
 
     Write-Host ("OSRM:  " + ($(if ($osrm.ok) { "UP" } else { "DOWN" })) + ($(if (-not $osrm.ok) { " | " + $osrm.reason } else { "" })))
+    Write-Host ("VROOM: " + ($(if ($vroom.ok) { "UP" } else { "DOWN" })) + ($(if (-not $vroom.ok) { " | " + $vroom.reason } else { "" })))
     Write-Host ("Tiles: " + ($(if ($tiles.ok) { "UP" } else { "DOWN" })) + ($(if (-not $tiles.ok) { " | " + $tiles.reason } else { "" })))
 
     # FIX: [OFFLINE-OPS-01] Allow degraded readiness when OSRM is up but tiles are unavailable.

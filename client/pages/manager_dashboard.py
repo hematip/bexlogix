@@ -44,6 +44,12 @@ def _save_uploaded_excel(uploaded_file) -> str | None:
 
 
 def _fallback_reason_fa(reason: str | None) -> str:
+    if reason == "vroom_timeout":
+        return "پاسخ VROOM در زمان مقرر دریافت نشد."
+    if reason == "vroom_invalid_response":
+        return "پاسخ VROOM معتبر نبود."
+    if reason == "vroom_unavailable":
+        return "سرویس VROOM محلی در دسترس نبود."
     if reason == "osrm_timeout":
         return "پاسخ OSRM در زمان مقرر دریافت نشد."
     if reason == "osrm_invalid_response":
@@ -285,41 +291,93 @@ def _run_apply_files_and_build_route(
                     st.info(
                         "فایل MBTiles پیدا نشد. مسیر مورد انتظار: offline/tiles/data/*.mbtiles"
                     )
-                if runtime_state.get("osrm_up", False):
-                    route_planner = routing_service.OSRMRoutePlanner(
-                        fallback_planner=routing_service.NearestNeighborRoutePlanner(),
-                        runtime_status=runtime_state,
+                route_summary: dict
+                routes_precomputed = bool(draft_summary.get("routes_precomputed"))
+                if routes_precomputed:
+                    route_summary = dict(draft_summary.get("route_summary") or {})
+                    route_summary.setdefault(
+                        "total_assignments",
+                        int(draft_summary.get("created_assignments", 0)),
                     )
-                    _set_step(
-                        "route", "running", "در حال مرتب‌سازی مسیرها با OSRM محلی..."
+                    route_summary.setdefault("total_visitors", 0)
+                    route_summary.setdefault("osrm_routed", 0)
+                    route_summary.setdefault("nn_routed", 0)
+                    route_summary.setdefault("vroom_routed", 0)
+                    route_summary.setdefault("vroom_used", True)
+                    route_summary.setdefault("osrm_used", False)
+                    route_summary.setdefault(
+                        "solver_mode",
+                        str(draft_summary.get("solver_mode") or "vroom"),
                     )
-                else:
-                    route_planner = routing_service.NearestNeighborRoutePlanner()
-                    _set_step(
-                        "route",
-                        "running",
-                        "OSRM محلی در دسترس نیست؛ مرتب‌سازی با الگوریتم پشتیبان انجام می‌شود...",
+                    route_summary.setdefault(
+                        "fallback_stage",
+                        draft_summary.get("fallback_stage"),
                     )
-
-                route_summary = routing_service.apply_routes_for_work_date(
-                    db=db,
-                    work_date=work_date,
-                    planner=route_planner,
-                )
-                if route_summary["osrm_used"]:
+                    route_summary.setdefault(
+                        "solver_reason",
+                        draft_summary.get("solver_reason"),
+                    )
+                    route_summary.setdefault("fallback_reason", None)
                     _set_step(
                         "route",
                         "done",
-                        "مسیرها با OSRM بهینه شدند.",
+                        "مسیرها با VROOM+OSRM آفلاین ساخته شدند.",
                         mark_complete=True,
                     )
                 else:
-                    _set_step(
-                        "route",
-                        "warn",
-                        f"OSRM در دسترس نبود؛ از الگوریتم پشتیبان استفاده شد. ({_fallback_reason_fa(route_summary.get('fallback_reason'))})",
-                        mark_complete=True,
+                    if runtime_state.get("osrm_up", False):
+                        route_planner = routing_service.OSRMRoutePlanner(
+                            fallback_planner=routing_service.NearestNeighborRoutePlanner(),
+                            runtime_status=runtime_state,
+                        )
+                        _set_step(
+                            "route", "running", "در حال مرتب‌سازی مسیرها با OSRM محلی..."
+                        )
+                    else:
+                        route_planner = routing_service.NearestNeighborRoutePlanner()
+                        _set_step(
+                            "route",
+                            "running",
+                            "OSRM محلی در دسترس نیست؛ مرتب‌سازی با الگوریتم پشتیبان انجام می‌شود...",
+                        )
+
+                    route_summary = routing_service.apply_routes_for_work_date(
+                        db=db,
+                        work_date=work_date,
+                        planner=route_planner,
                     )
+                    if draft_summary.get("fallback_stage"):
+                        route_summary["fallback_stage"] = draft_summary.get(
+                            "fallback_stage"
+                        )
+                    if draft_summary.get("solver_reason"):
+                        route_summary["solver_reason"] = draft_summary.get(
+                            "solver_reason"
+                        )
+                    route_summary["solver_mode"] = str(
+                        route_summary.get("solver_mode")
+                        or draft_summary.get("solver_mode")
+                        or "legacy"
+                    )
+
+                    if route_summary["osrm_used"]:
+                        _set_step(
+                            "route",
+                            "done",
+                            "مسیرها با OSRM بهینه شدند.",
+                            mark_complete=True,
+                        )
+                    else:
+                        fallback_reason = (
+                            route_summary.get("fallback_reason")
+                            or route_summary.get("solver_reason")
+                        )
+                        _set_step(
+                            "route",
+                            "warn",
+                            f"از الگوریتم پشتیبان استفاده شد. ({_fallback_reason_fa(fallback_reason)})",
+                            mark_complete=True,
+                        )
 
                 quality = assignment_service.evaluate_route_quality_vs_round_robin(
                     db=db,
@@ -340,6 +398,7 @@ def _run_apply_files_and_build_route(
                 "route_summary": route_summary,
                 "quality": quality,
                 "osrm_used": bool(route_summary["osrm_used"]),
+                "shadow": draft_summary.get("shadow"),
                 "runtime_status": runtime_state,
             }
     finally:
@@ -365,9 +424,23 @@ def _render_pipeline_result(result: dict) -> None:
             "total_assignments": int(result.get("routed_count", 0)),
             "osrm_routed": 0,
             "nn_routed": 0,
+            "vroom_routed": 0,
+            "vroom_used": False,
             "osrm_used": False,
+            "solver_mode": "legacy",
+            "fallback_stage": None,
+            "solver_reason": None,
             "fallback_reason": None,
         },
+    )
+    solver_mode = str(
+        route_summary.get("solver_mode") or draft_summary.get("solver_mode") or "legacy"
+    ).strip()
+    fallback_stage = route_summary.get("fallback_stage") or draft_summary.get(
+        "fallback_stage"
+    )
+    solver_reason = route_summary.get("solver_reason") or draft_summary.get(
+        "solver_reason"
     )
 
     st.success(
@@ -381,6 +454,7 @@ def _render_pipeline_result(result: dict) -> None:
     comparable = not (
         int(route_summary.get("osrm_routed", 0)) == 0
         and int(route_summary.get("nn_routed", 0)) > 0
+        and solver_mode != "vroom"
     )
     gate_text = (
         "قابل مقایسه نیست"
@@ -396,15 +470,33 @@ def _render_pipeline_result(result: dict) -> None:
             ("وضعیت", gate_text),
         ]
     )
+    if solver_mode == "vroom":
+        route_mode_text = (
+            f"مسیر {route_summary.get('vroom_routed', 0)} ویزیتور با VROOM+OSRM آفلاین"
+        )
+    else:
+        route_mode_text = (
+            f"مسیر {route_summary.get('osrm_routed', 0)} ویزیتور با OSRM | "
+            f"{route_summary.get('nn_routed', 0)} ویزیتور با الگوریتم پشتیبان"
+        )
     st.markdown(
         (
             '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.1rem;">'
-            f"مسیر {route_summary.get('osrm_routed', 0)} ویزیتور با OSRM | "
-            f"{route_summary.get('nn_routed', 0)} ویزیتور با الگوریتم پشتیبان"
+            f"{route_mode_text}"
             "</div>"
         ),
         unsafe_allow_html=True,
     )
+    if fallback_stage == "vroom_to_legacy":
+        st.markdown(
+            (
+                '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.05rem;">'
+                "fallback مرحله اول: "
+                f"VROOM به Legacy ({_fallback_reason_fa(solver_reason)})"
+                "</div>"
+            ),
+            unsafe_allow_html=True,
+        )
     if int(route_summary.get("nn_routed", 0)) > 0:
         st.markdown(
             (
@@ -418,6 +510,7 @@ def _render_pipeline_result(result: dict) -> None:
     if (
         int(route_summary.get("osrm_routed", 0)) == 0
         and int(route_summary.get("nn_routed", 0)) > 0
+        and solver_mode != "vroom"
     ):
         runtime_state = result.get("runtime_status") or {}
         reason_text = _fallback_reason_fa(route_summary.get("fallback_reason"))
@@ -429,6 +522,22 @@ def _render_pipeline_result(result: dict) -> None:
             st.warning(
                 f"OSRM محلی در دسترس نبوده و مسیرها با الگوریتم پشتیبان ساخته شده‌اند. {reason_text}"
             )
+    if fallback_stage == "vroom_to_legacy":
+        st.info(
+            "حل‌گر VROOM در دسترس نبود و سیستم به‌صورت خودکار از پایپلاین Legacy استفاده کرده است. "
+            f"{_fallback_reason_fa(solver_reason)}"
+        )
+    shadow = result.get("shadow")
+    if isinstance(shadow, dict) and bool(shadow.get("enabled")):
+        shadow_status = "موفق" if str(shadow.get("status")) == "ok" else "ناموفق"
+        shadow_reason = _fallback_reason_fa(shadow.get("solver_reason"))
+        st.caption(
+            "خروجی Shadow VROOM: "
+            f"{shadow_status} | "
+            f"assigned={shadow.get('assigned_count', 0)} | "
+            f"unassigned={shadow.get('unassigned_count', 0)} | "
+            f"reason={shadow_reason}"
+        )
     if comparable and not quality["passes_gate"]:
         st.warning(
             "وضعیت ارزیابی رد شد. بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد."
@@ -455,6 +564,7 @@ def render_manager_dashboard(current_user: dict) -> None:
     visit_count = int(snapshot.get("visit_count", 0))
     followup_count = int(snapshot.get("followup_count", 0))
     published_count = int(snapshot.get("published_count", 0))
+    draft_count = int(snapshot.get("draft_count", 0))
     non_draft_count = int(snapshot.get("non_draft_count", 0))
     assignment_count = int(snapshot.get("assignment_count", 0))
 
@@ -472,6 +582,10 @@ def render_manager_dashboard(current_user: dict) -> None:
     if is_soft_locked:
         st.info(
             "برای این تاریخ هنوز ویزیت/پیگیری ثبت نشده است. می‌توانید پاک‌سازی کامل انجام دهید و دوباره فایل آپلود کنید."
+        )
+    if (not is_hard_locked) and draft_count <= 0:
+        st.info(
+            "برای این تاریخ پیش‌نویسی برای انتشار وجود ندارد. اگر قبلاً منتشر شده، برای ساخت مسیر جدید ابتدا پاک‌سازی کامل همان تاریخ را انجام دهید."
         )
 
     with st.expander("اعمال فایل‌ها و ساخت مسیر", expanded=not is_hard_locked):
@@ -595,7 +709,7 @@ def render_manager_dashboard(current_user: dict) -> None:
             "📤 انتشار مسیرها",
             key=f"publish_{work_date_iso}",
             use_container_width=True,
-            disabled=is_hard_locked,
+            disabled=is_hard_locked or (draft_count <= 0),
         ):
             try:
                 with get_db() as db:

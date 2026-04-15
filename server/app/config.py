@@ -18,6 +18,18 @@ def _to_float(raw_value: str | None, default: float) -> float:
         return default
 
 
+# Contract: _to_bool executes one deterministic step in the workflow.
+def _to_bool(raw_value: str | None, default: bool) -> bool:
+    if raw_value is None:
+        return default
+    normalized = str(raw_value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 # Contract: _is_local_or_private_host executes one deterministic step in the workflow.
 def _is_local_or_private_host(hostname: str | None) -> bool:
     if not hostname:
@@ -50,6 +62,25 @@ OSRM_BASE_URL = _offline_only_url(os.getenv("OSRM_BASE_URL"), "http://127.0.0.1:
 
 # Timeout (seconds) for OSRM HTTP calls before fallback planner is used.
 OSRM_TIMEOUT_SECONDS = _to_float(os.getenv("OSRM_TIMEOUT_SECONDS"), 2.5)
+
+# Base URL for local VROOM optimization API (offline-first default).
+# Example: http://127.0.0.1:3000
+VROOM_BASE_URL = _offline_only_url(
+    os.getenv("VROOM_BASE_URL"),
+    "http://127.0.0.1:3000",
+)
+
+# Timeout (seconds) for VROOM HTTP calls.
+VROOM_TIMEOUT_SECONDS = _to_float(os.getenv("VROOM_TIMEOUT_SECONDS"), 10.0)
+
+# Global solver selection for routing pipeline.
+# Allowed: legacy | vroom | auto
+ROUTING_SOLVER_MODE = os.getenv("ROUTING_SOLVER_MODE", "auto").strip().lower()
+if ROUTING_SOLVER_MODE not in {"legacy", "vroom", "auto"}:
+    ROUTING_SOLVER_MODE = "auto"
+
+# Shadow mode computes VROOM output for comparison but keeps legacy as source of truth.
+ROUTING_SHADOW_MODE = _to_bool(os.getenv("ROUTING_SHADOW_MODE"), False)
 
 # Preferred map render engine for offline vector/raster pipelines.
 # Allowed: auto | leaflet_minimal | maplibre_vector

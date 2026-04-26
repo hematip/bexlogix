@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from client import auth_state
+from client.i18n import get_language, render_language_switch, t
 from client.pages.login import render_forced_password_change, render_login_page
 from client.pages.manager_dashboard import render_manager_dashboard
 from client.pages.supervisor_dashboard import render_supervisor_dashboard
@@ -105,33 +106,35 @@ def _render_topbar(current_user: dict) -> bool:
         )
         logout_confirm = bool(st.session_state.get("logout_confirm", False))
         if not logout_confirm:
-            if st.button("خروج", key="logout_topbar", use_container_width=True):
+            if st.button(t("خروج", "Log Out"), key="logout_topbar", use_container_width=True):
                 st.session_state["logout_confirm"] = True
                 st.rerun()
             return False
 
-        st.warning("مطمئن هستید؟ جلسه شما پایان می‌یابد.")
+        st.warning(t("مطمئن هستید؟ جلسه شما پایان می‌یابد.", "Are you sure? Your session will end."))
         c1, c2 = st.columns(2, gap="small")
         with c1:
-            if st.button("بله، خروج", key="logout_topbar_yes", use_container_width=True):
+            if st.button(t("بله، خروج", "Yes, Log Out"), key="logout_topbar_yes", use_container_width=True):
                 st.session_state["logout_confirm"] = False
                 return True
         with c2:
-            if st.button("انصراف", key="logout_topbar_cancel", use_container_width=True):
+            if st.button(t("انصراف", "Cancel"), key="logout_topbar_cancel", use_container_width=True):
                 st.session_state["logout_confirm"] = False
                 st.rerun()
     return False
 
 # Contract: main executes one deterministic step in the workflow.
 def main() -> None:
+    get_language()
     st.set_page_config(
-        page_title="BexLogix",
+        page_title=t("BexLogix", "Helio"),
         layout="wide",
         page_icon=_resolve_tab_icon(),
         initial_sidebar_state="collapsed",
     )
     seed_if_empty()
     inject_global_css()
+    render_language_switch(key="global_fixed_lang_switch")
 
     requested_view = _get_query_view()
     current_user = auth_state.get_current_user()
@@ -152,14 +155,14 @@ def main() -> None:
     expiry_warning = auth_state.get_session_expiry_warning()
     if expiry_warning:
         st.warning(expiry_warning)
-        if st.button("متوجه شدم", key="ack_session_warning"):
+        if st.button(t("متوجه شدم", "Understood"), key="ack_session_warning"):
             auth_state.acknowledge_session_expiry_warning()
             st.rerun()
 
     role = current_user["role"]
     expected_view = VIEW_BY_ROLE.get(role)
     if not expected_view:
-        st.error("نقش کاربری پشتیبانی نمی‌شود.")
+        st.error(t("نقش کاربری پشتیبانی نمی‌شود.", "Unsupported user role."))
         return
 
     if requested_view != expected_view:
@@ -185,7 +188,7 @@ def main() -> None:
     elif role == UserRole.TELESALES.value:
         render_telesales_panel(current_user)
     else:
-        st.error("نقش کاربری پشتیبانی نمی‌شود.")
+        st.error(t("نقش کاربری پشتیبانی نمی‌شود.", "Unsupported user role."))
 
 
 if __name__ == "__main__":

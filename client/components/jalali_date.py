@@ -1,5 +1,5 @@
-﻿# Purpose: Shared Jalali date picker for all dashboards.
-# Workflow Role: Provides a consistent Persian date selection UX with optional today shortcut.
+# Purpose: Shared localized date picker for all dashboards.
+# Workflow Role: Provides Jalali UI for Persian and Gregorian UI for English.
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ from datetime import date as gregorian_date
 
 import jdatetime
 import streamlit as st
+
+from client.i18n import is_fa, t
 
 _PERSIAN_MONTHS = {
     1: "فروردین",
@@ -27,17 +29,14 @@ _EN_TO_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 _FA_TO_EN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
 
 
-# Contract: _to_fa_digits executes one deterministic step in the workflow.
 def _to_fa_digits(value: str | int) -> str:
     return str(value).translate(_EN_TO_FA_DIGITS)
 
 
-# Contract: _to_en_digits executes one deterministic step in the workflow.
 def _to_en_digits(value: str) -> str:
     return str(value).translate(_FA_TO_EN_DIGITS)
 
 
-# Contract: _jalali_days_in_month executes one deterministic step in the workflow.
 def _jalali_days_in_month(year: int, month: int) -> int:
     if month <= 6:
         return 31
@@ -46,15 +45,41 @@ def _jalali_days_in_month(year: int, month: int) -> int:
     return 30 if jdatetime.date(year, 1, 1).isleap() else 29
 
 
-# Contract: jalali_date_input executes one deterministic step in the workflow.
-def jalali_date_input(
+def _render_gregorian_date_input(
     label: str,
     key_prefix: str,
-    default_gregorian: gregorian_date | None = None,
+    default_gregorian: gregorian_date,
 ) -> gregorian_date:
-    # FIX: [UX-01] Add quick "today" shortcut while keeping three dropdowns intact.
-    default_base = default_gregorian or gregorian_date.today()
-    default_jalali = jdatetime.date.fromgregorian(date=default_base)
+    date_key = f"{key_prefix}_gregorian_date"
+    if date_key not in st.session_state:
+        st.session_state[date_key] = default_gregorian
+
+    st.markdown(f'<div class="date-input-label">{label}</div>', unsafe_allow_html=True)
+    if st.button("📅 Today", key=f"{key_prefix}_today_shortcut", use_container_width=False):
+        st.session_state[date_key] = gregorian_date.today()
+        st.rerun()
+
+    selected = st.date_input(
+        t("تاریخ", "Date"),
+        key=date_key,
+        label_visibility="collapsed",
+    )
+    if not isinstance(selected, gregorian_date):
+        selected = default_gregorian
+
+    st.markdown(
+        f'<div class="jalali-selected-caption">Selected date: {selected.isoformat()}</div>',
+        unsafe_allow_html=True,
+    )
+    return selected
+
+
+def _render_jalali_date_input(
+    label: str,
+    key_prefix: str,
+    default_gregorian: gregorian_date,
+) -> gregorian_date:
+    default_jalali = jdatetime.date.fromgregorian(date=default_gregorian)
 
     year_key = f"{key_prefix}_jalali_year"
     month_key = f"{key_prefix}_jalali_month"
@@ -100,7 +125,6 @@ def jalali_date_input(
         unsafe_allow_html=True,
     )
 
-    # FIX: [UX-DATE-01] Keep year/month/day as three equal-width columns across all panels.
     col_year, col_month, col_day = st.columns(3)
 
     with col_year:
@@ -109,7 +133,7 @@ def jalali_date_input(
             options=list(range(default_jalali.year - 5, default_jalali.year + 6)),
             index=5,
             key=year_key,
-            format_func=lambda v: _to_fa_digits(v),
+            format_func=lambda value: _to_fa_digits(value),
         )
 
     with col_month:
@@ -133,8 +157,28 @@ def jalali_date_input(
             options=day_options,
             index=day_default_index,
             key=day_key,
-            format_func=lambda v: _to_fa_digits(v),
+            format_func=lambda value: _to_fa_digits(value),
         )
 
     selected_jalali = jdatetime.date(int(year), int(month), int(day))
     return selected_jalali.togregorian()
+
+
+def jalali_date_input(
+    label: str,
+    key_prefix: str,
+    default_gregorian: gregorian_date | None = None,
+) -> gregorian_date:
+    default_base = default_gregorian or gregorian_date.today()
+    if is_fa():
+        return _render_jalali_date_input(
+            label=label,
+            key_prefix=key_prefix,
+            default_gregorian=default_base,
+        )
+    return _render_gregorian_date_input(
+        label=label,
+        key_prefix=key_prefix,
+        default_gregorian=default_base,
+    )
+

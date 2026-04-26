@@ -9,19 +9,24 @@ from pathlib import Path
 
 import streamlit as st
 
+from client.i18n import align, direction, get_language, is_fa, start_side
+
 BG = "#F2F4F7"
 SURFACE = "#E8ECF1"
 SHADOW_DARK = "#ccd0d8"
 SHADOW_LIGHT = "#ffffff"
 TEXT_PRIMARY = "#2C3E50"
 TEXT_SECONDARY = "#5A6878"  # FIX: [A11Y-01] WCAG contrast-compliant secondary text color.
-ACCENT = "#3D5FCC"  # FIX: [A11Y-01] WCAG contrast-compliant accent color.
+ACCENT_FA = "#3D5FCC"  # FIX: [A11Y-01] WCAG contrast-compliant accent color.
+ACCENT_EN = "#D9A300"
+ACCENT_GRADIENT_FA = "#6F87D7"
+ACCENT_GRADIENT_EN = "#F3CF62"
 
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 _FONTS_DIR = _ASSETS_DIR / "fonts"
-_GLOBAL_CSS_CACHE: str | None = None
+_GLOBAL_CSS_CACHE: dict[str, str] = {}
 
-_STATUS_DISPLAY = {
+_STATUS_DISPLAY_FA = {
     "green": "✓ سبز",  # FIX: [A11Y-03] Add icon + shape for color-blind safety.
     "yellow": "! زرد",
     "red": "✕ قرمز",
@@ -32,11 +37,29 @@ _STATUS_DISPLAY = {
     "skipped": "✕ ردشده",
 }
 
-_ROLE_DISPLAY = {
+_STATUS_DISPLAY_EN = {
+    "green": "✓ Green",
+    "yellow": "! Yellow",
+    "red": "✕ Red",
+    "draft": "○ Draft",
+    "supervisor_approved": "◉ Supervisor Approved",
+    "published": "● Published",
+    "completed": "✓ Completed",
+    "skipped": "✕ Skipped",
+}
+
+_ROLE_DISPLAY_FA = {
     "manager": "مدیر",
     "supervisor": "سرپرست",
     "visitor": "ویزیتور",
     "telesales": "فروش تلفنی",
+}
+
+_ROLE_DISPLAY_EN = {
+    "manager": "Manager",
+    "supervisor": "Supervisor",
+    "visitor": "Visitor",
+    "telesales": "Telesales",
 }
 
 
@@ -67,6 +90,26 @@ def _build_local_font_face_css() -> str:
 
 def _build_global_css() -> str:
     font_face_css = _build_local_font_face_css()
+    rtl_layout = is_fa()
+    flow_direction = direction()
+    text_align = align()
+    start_edge = start_side()
+    end_edge = "left" if start_edge == "right" else "right"
+    accent = ACCENT_FA if rtl_layout else ACCENT_EN
+    accent_gradient = ACCENT_GRADIENT_FA if rtl_layout else ACCENT_GRADIENT_EN
+    accent_soft = "#DBEAFE" if rtl_layout else "#FFF4CC"
+    accent_text = "#1E40AF" if rtl_layout else "#8A6A00"
+    accent_soft_alt = "#E0E7FF" if rtl_layout else "#FFF0B3"
+    accent_text_alt = "#3730A3" if rtl_layout else "#8C6F00"
+    base_font_stack = (
+        "'Vazirmatn', 'IRANSansFaNum', 'IRANSans FaNum', 'IRAN Sans', 'Tahoma', 'Segoe UI', sans-serif"
+        if rtl_layout
+        else "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+    )
+    today_shortcut_justify = "flex-end" if rtl_layout else "flex-start"
+    progress_fill_anchor_css = (
+        f"{start_edge}: 0; {end_edge}: auto; transform-origin: {start_edge} center;"
+    )
     return f"""
 <style>
 {font_face_css}
@@ -77,7 +120,11 @@ def _build_global_css() -> str:
     --bex-shadow-light: {SHADOW_LIGHT};
     --bex-text-primary: {TEXT_PRIMARY};
     --bex-text-secondary: {TEXT_SECONDARY};
-    --bex-accent: {ACCENT};
+    --bex-accent: {accent};
+    --bex-accent-soft: {accent_soft};
+    --bex-accent-soft-alt: {accent_soft_alt};
+    --bex-accent-text: {accent_text};
+    --bex-accent-text-alt: {accent_text_alt};
 }}
 
 html,
@@ -96,7 +143,7 @@ th,
 td,
 p,
 li {{
-    font-family: 'Vazirmatn', 'IRANSansFaNum', 'IRANSans FaNum', 'IRAN Sans', 'Tahoma', 'Segoe UI', sans-serif !important;
+    font-family: {base_font_stack} !important;
 }}
 
 /* FIX: Ensure dropdown/date popovers also use Persian font stack. */
@@ -105,7 +152,7 @@ li {{
 [role="listbox"] *,
 [role="option"],
 [data-testid="stPopover"] * {{
-    font-family: 'Vazirmatn', 'IRANSansFaNum', 'IRANSans FaNum', 'IRAN Sans', 'Tahoma', 'Segoe UI', sans-serif !important;
+    font-family: {base_font_stack} !important;
 }}
 
 /* FIX: [OFFLINE-02] Replace material-ligature dependency with local CSS arrows. */
@@ -137,8 +184,8 @@ body,
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"] {{
     background-color: var(--bex-bg) !important;
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     color: var(--bex-text-primary) !important;
 }}
 
@@ -174,7 +221,7 @@ section[data-testid="stSidebar"],
     font-weight: 700;
     line-height: 1.22;
     color: var(--bex-text-primary);
-    text-align: right;
+    text-align: {text_align};
 }}
 
 .date-input-label {{
@@ -182,7 +229,7 @@ section[data-testid="stSidebar"],
     font-size: 1.55rem;
     font-weight: 700;
     color: var(--bex-text-primary);
-    text-align: right;
+    text-align: {text_align};
 }}
 
 .jalali-selected-caption {{
@@ -190,14 +237,14 @@ section[data-testid="stSidebar"],
     color: var(--bex-text-secondary);
     font-size: 0.95rem;
     line-height: 1.7;
-    text-align: right !important;
-    direction: rtl !important;
+    text-align: {text_align} !important;
+    direction: {flow_direction} !important;
 }}
 
 /* FIX: Keep today's shortcut compact and aligned to the right side. */
 div[class*="st-key-"][class*="_today_shortcut"] {{
     display: flex !important;
-    justify-content: flex-end !important;
+    justify-content: {today_shortcut_justify} !important;
 }}
 div[class*="st-key-"][class*="_today_shortcut"] > div {{
     width: auto !important;
@@ -310,8 +357,8 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
     color: var(--bex-text-secondary);
     font-size: 0.95rem;
     line-height: 1.95;
-    text-align: right !important;
-    direction: rtl !important;
+    text-align: {text_align} !important;
+    direction: {flow_direction} !important;
 }}
 
 .panel-description-columns {{
@@ -319,15 +366,15 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
     color: #607c5d;
     font-size: 0.88rem;
     line-height: 1.8;
-    text-align: right !important;
-    direction: rtl !important;
+    text-align: {text_align} !important;
+    direction: {flow_direction} !important;
 }}
 
 /* FIX: [UX-06] Ordered checklist alignment in pipeline status box. */
 .pipeline-checklist-left,
 .pipeline-checklist-right {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     line-height: 2 !important;
     font-size: 0.96rem !important;
     color: var(--bex-text-primary) !important;
@@ -336,13 +383,13 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
 }}
 
 [data-testid="stStatusWidget"] [data-testid="stMarkdownContainer"] {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
 }}
 
 .pipeline-progress-wrap {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     margin-top: 0.3rem;
 }}
 
@@ -360,24 +407,22 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
     background: #d8dde5;
     position: relative;
     overflow: hidden;
-    direction: rtl !important;
+    direction: {flow_direction} !important;
 }}
 
 .pipeline-progress-fill {{
     position: absolute;
-    right: 0;
-    left: auto;
+    {progress_fill_anchor_css}
     top: 0;
     bottom: 0;
     border-radius: 999px;
-    background: linear-gradient(90deg, #3D5FCC 0%, #6f87d7 100%);
-    transform-origin: right center;
+    background: linear-gradient(90deg, {accent} 0%, {accent_gradient} 100%);
     transition: width 240ms ease;
 }}
 
 .pipeline-progress-note {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     margin-top: 0.5rem;
     font-size: 0.9rem;
     color: var(--bex-text-secondary);
@@ -386,8 +431,8 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
 
 /* FIX: [UX-09] Visitor progress must be RTL with right-aligned note text. */
 .visitor-progress-wrap {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     margin: 0.3rem 0 0.9rem;
 }}
 
@@ -398,17 +443,15 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
     background: #d8dde5;
     position: relative;
     overflow: hidden;
-    direction: rtl !important;
+    direction: {flow_direction} !important;
 }}
 
 .visitor-progress-fill {{
     position: absolute;
-    right: 0;
-    left: auto;
+    {progress_fill_anchor_css}
     top: 0;
     bottom: 0;
     border-radius: 999px;
-    transform-origin: right center;
     transition: width 240ms ease;
 }}
 
@@ -417,8 +460,8 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
     color: var(--bex-text-secondary);
     font-size: 0.92rem;
     font-weight: 600;
-    text-align: right !important;
-    direction: rtl !important;
+    text-align: {text_align} !important;
+    direction: {flow_direction} !important;
 }}
 
 .hourglass-spin {{
@@ -552,12 +595,12 @@ textarea {{
 
 /* FIX: Standardize checkbox spacing/alignment for confirmation rows. */
 [data-testid="stCheckbox"] {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     margin-top: 0.2rem !important;
 }}
 [data-testid="stCheckbox"] > label {{
-    direction: rtl !important;
+    direction: {flow_direction} !important;
     display: inline-flex !important;
     flex-direction: row !important;
     align-items: center !important;
@@ -566,7 +609,7 @@ textarea {{
     row-gap: 0 !important;
     min-height: 40px !important;
     line-height: 1.8 !important;
-    padding-right: 0.25rem !important;
+    padding-{start_edge}: 0.25rem !important;
     cursor: pointer !important;
 }}
 [data-testid="stCheckbox"] input[type="checkbox"] {{
@@ -575,7 +618,7 @@ textarea {{
     margin: 0 !important;
 }}
 [data-testid="stCheckbox"] > label > div:last-child {{
-    margin-right: 0.18rem !important;
+    margin-{start_edge}: 0.18rem !important;
 }}
 [data-testid="stCheckbox"] span {{
     margin: 0 !important;
@@ -588,13 +631,13 @@ textarea {{
     text-align: start !important;
 }}
 [data-baseweb="select"] input::placeholder {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
 }}
 
 [data-testid="stFileUploaderDropzone"] {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     min-height: 44px !important; /* FIX: [A11Y-05] Minimum touch target for upload zone. */
 }}
 
@@ -611,8 +654,8 @@ details[data-testid="stExpander"] {{
 }}
 
 details[data-testid="stExpander"] summary {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     font-size: 1.08rem !important;
 }}
 
@@ -625,14 +668,14 @@ details[data-testid="stExpander"] [data-testid="stCaptionContainer"],
 details[data-testid="stExpander"] [data-testid="stCaptionContainer"] *,
 details[data-testid="stExpander"] .stCaptionContainer,
 details[data-testid="stExpander"] .stCaptionContainer * {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     line-height: 1.9 !important;
 }}
 
 .telesales-detail-line {{
-    direction: rtl !important;
-    text-align: right !important;
+    direction: {flow_direction} !important;
+    text-align: {text_align} !important;
     margin: 0.35rem 0 !important;
     color: var(--bex-text-primary);
 }}
@@ -645,7 +688,7 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
 
 /* FIX: Center all dataframe cells/headers and keep Persian-friendly visual alignment. */
 [data-testid="stDataFrame"] [role="grid"] {{
-    direction: rtl !important;
+    direction: {flow_direction} !important;
 }}
 
 [data-testid="stDataFrame"] [role="columnheader"],
@@ -674,8 +717,8 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
 .badge-red    {{ background: #f8d7da; color: #721c24; }}
 .badge-gray   {{ background: #e2e3e5; color: #383d41; }}
 .badge-draft     {{ background: #e2e3e5; color: #383d41; }}
-.badge-supervisor-approved {{ background: #e0e7ff; color: #3730a3; }}
-.badge-published {{ background: #cce5ff; color: #004085; }}
+.badge-supervisor-approved {{ background: var(--bex-accent-soft-alt); color: var(--bex-accent-text-alt); }}
+.badge-published {{ background: var(--bex-accent-soft); color: var(--bex-accent-text); }}
 .badge-completed {{ background: #d4edda; color: #155724; }}
 .badge-skipped   {{ background: #f8d7da; color: #721c24; }}
 
@@ -686,8 +729,8 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
     margin-bottom: 0.6rem;
     padding-bottom: 0.3rem;
     border-bottom: 2px solid var(--bex-surface);
-    text-align: right !important;
-    direction: rtl !important;
+    text-align: {text_align} !important;
+    direction: {flow_direction} !important;
 }}
 
 .role-badge {{
@@ -698,14 +741,14 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
     font-weight: 700;
 }}
 
-.role-manager    {{ background: #dbeafe; color: #1e40af; }}
+.role-manager    {{ background: var(--bex-accent-soft); color: var(--bex-accent-text); }}
 .role-supervisor {{ background: #fef3c7; color: #92400e; }}
 .role-visitor    {{ background: #d1fae5; color: #065f46; }}
 .role-telesales  {{ background: #ede9fe; color: #5b21b6; }}
 
 .monitoring-bar {{
-    background: #dbeafe;
-    color: #1e40af;
+    background: var(--bex-accent-soft);
+    color: var(--bex-accent-text);
     border-radius: 10px;
     padding: 0.6rem 1rem;
     font-weight: 600;
@@ -715,6 +758,46 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
     box-shadow: inset 2px 2px 5px rgba(0,0,0,0.06), inset -2px -2px 5px rgba(255,255,255,0.8);
 }}
 
+div[class*="st-key-global_fixed_lang_switch"] {{
+    position: fixed !important;
+    top: 0.55rem !important;
+    left: 0.85rem !important;
+    z-index: 10050 !important;
+    min-width: 118px !important;
+    max-width: 118px !important;
+    margin: 0 !important;
+    padding: 0.16rem !important;
+    border-radius: 10px;
+    background: rgba(242, 244, 247, 0.94);
+    box-shadow: 2px 2px 6px rgba(204, 208, 216, 0.8), -2px -2px 6px rgba(255, 255, 255, 0.9);
+}}
+
+div[class*="st-key-global_fixed_lang_switch"] > div[data-testid="stHorizontalBlock"] {{
+    gap: 0.24rem !important;
+}}
+
+div[class*="st-key-global_fixed_lang_switch"] button {{
+    min-height: 30px !important;
+    padding: 0.15rem 0.3rem !important;
+    border-radius: 8px !important;
+    border: 1px solid #c3cad6 !important;
+    background: #eef1f5 !important;
+    color: #2c3e50 !important;
+    font-size: 0.82rem !important;
+    font-weight: 700 !important;
+    line-height: 1.1 !important;
+}}
+
+div[class*="st-key-global_fixed_lang_switch"] button[kind="primary"] {{
+    background: var(--bex-accent) !important;
+    color: #ffffff !important;
+    border-color: var(--bex-accent) !important;
+}}
+
+div[class*="st-key-global_fixed_lang_switch"] [data-testid="stWidgetLabel"] {{
+    display: none !important;
+}}
+
 button[data-baseweb="tab"] {{
     border-radius: 10px 10px 0 0 !important;
     font-weight: 600 !important;
@@ -722,29 +805,37 @@ button[data-baseweb="tab"] {{
 
 #MainMenu {{ visibility: hidden; }}
 footer {{ visibility: hidden; }}
+[data-testid="stToolbar"] {{ display: none !important; }}
+button[kind="header"] {{ display: none !important; }}
 </style>
 """
 
 
 def inject_global_css() -> None:
-    global _GLOBAL_CSS_CACHE
-    if _GLOBAL_CSS_CACHE is None:
-        _GLOBAL_CSS_CACHE = _build_global_css()
-    st.markdown(_GLOBAL_CSS_CACHE, unsafe_allow_html=True)
+    language = get_language()
+    if language not in _GLOBAL_CSS_CACHE:
+        _GLOBAL_CSS_CACHE[language] = _build_global_css()
+    st.markdown(_GLOBAL_CSS_CACHE[language], unsafe_allow_html=True)
 
 
 def _logo_img_tag(max_width: int = 280) -> str | None:
-    for extension, mime in [
+    language = get_language()
+    prefixes = ["logo"] if language == "fa" else ["logo_en", "logo"]
+    alt_text = "Bextudio" if language == "fa" else "Helio"
+    extensions = [
         ("png", "image/png"),
         ("jpg", "image/jpeg"),
         ("jpeg", "image/jpeg"),
         ("svg", "image/svg+xml"),
-    ]:
-        path = _ASSETS_DIR / f"logo.{extension}"
-        if path.exists():
+    ]
+    for prefix in prefixes:
+        for extension, mime in extensions:
+            path = _ASSETS_DIR / f"{prefix}.{extension}"
+            if not path.exists():
+                continue
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             return (
-                f'<img src="data:{mime};base64,{encoded}" alt="BexLogix" '
+                f'<img src="data:{mime};base64,{encoded}" alt="{alt_text}" '
                 f'style="max-width:{max_width}px;height:auto;">'
             )
     return None
@@ -831,7 +922,8 @@ def status_badge(text: str) -> str:
         "skipped": "badge-skipped",
     }
     css_class = css_map.get(normalized, "badge-gray")
-    display_text = _STATUS_DISPLAY.get(normalized, text)
+    display_map = _STATUS_DISPLAY_FA if is_fa() else _STATUS_DISPLAY_EN
+    display_text = display_map.get(normalized, text)
     return f'<span class="badge {css_class}">{display_text}</span>'
 
 
@@ -844,5 +936,6 @@ def role_badge_html(role: str) -> str:
         "telesales": "role-telesales",
     }
     css_class = css_map.get(normalized, "role-manager")
-    display_text = _ROLE_DISPLAY.get(normalized, role)
+    display_map = _ROLE_DISPLAY_FA if is_fa() else _ROLE_DISPLAY_EN
+    display_text = display_map.get(normalized, role)
     return f'<span class="role-badge {css_class}">{display_text}</span>'

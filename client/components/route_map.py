@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from client.i18n import align, direction, is_fa, t
 from server.app import config
 from server.app.services import routing_service, runtime_health_service
 
@@ -27,12 +28,20 @@ _GRADE_STYLES: dict[str, dict[str, str]] = {
 _DEFAULT_GRADE_STYLE: dict[str, str] = {
     "fill": "#6B7280",
     "stroke": "#374151",
-    "label": "نامشخص",
+    "label": "Unknown",
 }
 
 _ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
 _LEAFLET_DIR = _ASSETS_DIR / "vendor" / "leaflet"
 _LEAFLET_IMAGES = _LEAFLET_DIR / "images"
+
+
+def _route_accent() -> str:
+    return "#3D5FCC" if is_fa() else "#D9A300"
+
+
+def _route_accent_dark() -> str:
+    return "#2563EB" if is_fa() else "#C58A00"
 
 
 # Contract: _load_leaflet_js loads local vendored Leaflet JavaScript once.
@@ -177,7 +186,7 @@ def _build_marker_rows(store_points: pd.DataFrame) -> list[dict]:
                 "lon": float(row["lon"]),
                 "store_code": str(_to_py_scalar(row.get("store_code")) or ""),
                 "store_name": str(_to_py_scalar(row.get("store_name")) or ""),
-                "store_grade": store_grade or _DEFAULT_GRADE_STYLE["label"],
+                "store_grade": store_grade or t("نامشخص", "Unknown"),
                 "assignment_status": str(
                     _to_py_scalar(row.get("assignment_status")) or ""
                 ),
@@ -301,8 +310,8 @@ def _render_runtime_badge(runtime_status: dict[str, object]) -> None:
     tiles_latency = runtime_status.get("tiles_latency_ms")
     checked_at = str(runtime_status.get("checked_at") or "—")
 
-    osrm_text = "فعال" if osrm_on else "غیرفعال"
-    tile_text = "فعال" if tiles_on else "غیرفعال"
+    osrm_text = t("فعال", "UP") if osrm_on else t("غیرفعال", "DOWN")
+    tile_text = t("فعال", "UP") if tiles_on else t("غیرفعال", "DOWN")
     osrm_color = "#27AE60" if osrm_on else "#E74C3C"
     tile_color = "#27AE60" if tiles_on else "#E74C3C"
     osrm_latency_text = f"{osrm_latency}ms" if osrm_latency is not None else "—"
@@ -320,7 +329,7 @@ def _render_runtime_badge(runtime_status: dict[str, object]) -> None:
 
     st.markdown(
         f"""
-        <div style="direction:rtl;text-align:right;margin:.15rem 0 .6rem;padding:.55rem .8rem;
+        <div style="direction:{direction()};text-align:{align()};margin:.15rem 0 .6rem;padding:.55rem .8rem;
                     border-radius:10px;background:#EEF2FF;color:#23395B;font-size:.84rem;">
             <span style="margin-left:1rem;">OSRM: <strong style="color:{osrm_color};">{osrm_text}</strong> ({osrm_latency_text})</span>
             <span style="margin-left:1rem;">Tile: <strong style="color:{tile_color};">{tile_text}</strong> ({tile_latency_text})</span>
@@ -328,9 +337,9 @@ def _render_runtime_badge(runtime_status: dict[str, object]) -> None:
             <span style="margin-left:1rem;">Vector Style: <strong>{vector_style_text}</strong></span>
             <span style="margin-left:1rem;">Vector Dataset: <strong>{vector_dataset_id}</strong></span>
             <span style="margin-left:1rem;">Raster Fallback: <strong>{'ON' if using_public_raster_fallback else 'OFF'}</strong></span>
-            <span style="margin-left:1rem;">حالت Tile: <strong>{mode_title}</strong></span>
-            <span style="margin-left:1rem;">وضعیت کلی: <strong>{state_text}</strong></span>
-            <span>آخرین بررسی: <strong>{checked_at}</strong></span>
+            <span style="margin-left:1rem;">{t("حالت Tile", "Tile Mode")}: <strong>{mode_title}</strong></span>
+            <span style="margin-left:1rem;">{t("وضعیت کلی", "Overall State")}: <strong>{state_text}</strong></span>
+            <span>{t("آخرین بررسی", "Last Check")}: <strong>{checked_at}</strong></span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -344,15 +353,29 @@ def _render_leaflet_map(
     start_point: tuple[float, float] | None,
     runtime_status: dict[str, object],
 ) -> None:
+    route_color = _route_accent()
+    route_color_dark = _route_accent_dark()
+    popup_direction = direction()
+    popup_align = align()
+    start_popup_label = t("نقطه شروع ویزیتور", "Visitor Start Point")
+    store_label = t("فروشگاه", "Store")
+    grade_label = t("گرید", "Grade")
+    route_order_label = t("ترتیب مسیر", "Route Order")
+    status_label = t("وضعیت", "Status")
+    unknown_label = t("نامشخص", "Unknown")
+
     if not marker_rows:
-        st.info("داده‌ای برای نمایش روی نقشه وجود ندارد.")
+        st.info(t("داده‌ای برای نمایش روی نقشه وجود ندارد.", "No data is available to display on the map."))
         return
 
     leaflet_js = _load_leaflet_js()
     leaflet_css = _load_leaflet_css()
     if not leaflet_js or not leaflet_css:
         st.warning(
-            "فایل‌های محلی Leaflet پیدا نشد. پوشه assets/vendor/leaflet را بررسی کنید."
+            t(
+                "فایل‌های محلی Leaflet پیدا نشد. پوشه assets/vendor/leaflet را بررسی کنید.",
+                "Local Leaflet files were not found. Check assets/vendor/leaflet.",
+            )
         )
         return
 
@@ -427,7 +450,7 @@ def _render_leaflet_map(
 
         if (Array.isArray(payload.path) && payload.path.length > 1) {{
           L.polyline(payload.path, {{
-            color: "#3D5FCC",
+            color: "{route_color}",
             weight: 4,
             opacity: 0.85
           }}).addTo(map);
@@ -436,11 +459,11 @@ def _render_leaflet_map(
         if (Array.isArray(payload.start) && payload.start.length === 2) {{
           L.circleMarker(payload.start, {{
             radius: 8,
-            color: "#2563EB",
-            fillColor: "#3D5FCC",
+            color: "{route_color_dark}",
+            fillColor: "{route_color}",
             fillOpacity: 1,
             weight: 2
-          }}).addTo(map).bindPopup("نقطه شروع ویزیتور");
+          }}).addTo(map).bindPopup({json.dumps(start_popup_label, ensure_ascii=False)});
         }}
 
         const bounds = [];
@@ -467,11 +490,11 @@ def _render_leaflet_map(
 
           const routeOrderText = m.route_order === null || m.route_order === undefined ? "—" : String(m.route_order);
           const popupHtml =
-            '<div style="direction:rtl;text-align:right;font-family:IRANSansFaNum,IRANSans FaNum,Vazirmatn,IRAN Sans,Tahoma,Arial,sans-serif;line-height:1.8;">' +
-            '<b>فروشگاه:</b> ' + String(m.store_code || "") + ' — ' + String(m.store_name || "") + '<br/>' +
-            '<b>گرید:</b> ' + String(m.store_grade || "نامشخص") + '<br/>' +
-            '<b>ترتیب مسیر:</b> ' + routeOrderText + '<br/>' +
-            '<b>وضعیت:</b> ' + String(m.assignment_status || "—") +
+            '<div style="direction:{popup_direction};text-align:{popup_align};font-family:IRANSansFaNum,IRANSans FaNum,Vazirmatn,IRAN Sans,Tahoma,Arial,sans-serif;line-height:1.8;">' +
+            '<b>{store_label}:</b> ' + String(m.store_code || "") + ' — ' + String(m.store_name || "") + '<br/>' +
+            '<b>{grade_label}:</b> ' + String(m.store_grade || "{unknown_label}") + '<br/>' +
+            '<b>{route_order_label}:</b> ' + routeOrderText + '<br/>' +
+            '<b>{status_label}:</b> ' + String(m.assignment_status || "—") +
             '</div>';
           marker.bindPopup(popupHtml);
         }});
@@ -492,8 +515,20 @@ def _render_maplibre_vector_map(
     start_point: tuple[float, float] | None,
     runtime_status: dict[str, object],
 ) -> tuple[str, str | None]:
+    route_color = _route_accent()
+    route_color_dark = _route_accent_dark()
+    popup_direction = direction()
+    popup_align = align()
+    start_point_label = t("نقطه شروع ویزیتور", "Visitor Start Point")
+    route_label = t("مسیر پیشنهادی", "Suggested Route")
+    store_label = t("فروشگاه", "Store")
+    grade_label = t("گرید", "Grade")
+    route_order_label = t("ترتیب مسیر", "Route Order")
+    status_label = t("وضعیت", "Status")
+    unknown_label = t("نامشخص", "Unknown")
+
     if not marker_rows:
-        st.info("داده\u200cای برای نمایش روی نقشه وجود ندارد.")
+        st.info(t("داده‌ای برای نمایش روی نقشه وجود ندارد.", "No data is available to display on the map."))
         return "none", "no_markers"
 
     tile_base = _resolve_tile_service_base(runtime_status)
@@ -534,7 +569,7 @@ def _render_maplibre_vector_map(
                 "coordinates": [float(start_point[1]), float(start_point[0])],
             },
             "properties": {
-                "title": "\u0646\u0642\u0637\u0647 \u0634\u0631\u0648\u0639 \u0648\u06cc\u0632\u06cc\u062a\u0648\u0631"
+                "title": start_point_label
             },
         }
         if start_point is not None
@@ -545,7 +580,7 @@ def _render_maplibre_vector_map(
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": path_points_lon_lat},
             "properties": {
-                "name": "\u0645\u0633\u06cc\u0631 \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc"
+                "name": route_label
             },
         }
         if len(path_points_lon_lat) > 1
@@ -562,7 +597,7 @@ def _render_maplibre_vector_map(
                 "store_code": str(m.get("store_code") or ""),
                 "store_name": str(m.get("store_name") or ""),
                 "store_grade": str(
-                    m.get("store_grade") or "\u0646\u0627\u0645\u0634\u062e\u0635"
+                    m.get("store_grade") or unknown_label
                 ),
                 "assignment_status": str(m.get("assignment_status") or "?"),
                 "route_order": int(m["route_order"])
@@ -620,8 +655,8 @@ def _render_maplibre_vector_map(
         box-shadow: 3px 3px 8px rgba(204, 208, 216, 0.85), -3px -3px 8px rgba(255, 255, 255, 0.95);
       }}
       #{map_id} .maplibregl-popup-content {{
-        direction: rtl;
-        text-align: right;
+        direction: {popup_direction};
+        text-align: {popup_align};
         font-family: IRANSansFaNum, IRANSans FaNum, Vazirmatn, IRAN Sans, Tahoma, Arial, sans-serif;
       }}
       #{map_id}.leaflet-fallback-map {{
@@ -677,7 +712,7 @@ def _render_maplibre_vector_map(
           if (!container) return;
 
           if (!ensureLeafletRuntime()) {{
-            container.innerHTML = '<div style="padding:1rem;direction:rtl;text-align:right;color:#6B7280;">Basemap در دسترس نیست. مارکرها و مسیر بدون نقشه پایه نمایش داده می\u200cشوند.</div>';
+            container.innerHTML = '<div style="padding:1rem;direction:{popup_direction};text-align:{popup_align};color:#6B7280;">{t("Basemap در دسترس نیست. مارکرها و مسیر بدون نقشه پایه نمایش داده می‌شوند.", "Basemap is unavailable. Markers and route are shown without a base map.")}</div>';
             return;
           }}
 
@@ -704,18 +739,18 @@ def _render_maplibre_vector_map(
             }});
           }}
           if (routeLatLon.length > 1) {{
-            window.L.polyline(routeLatLon, {{ color: "#3D5FCC", weight: 4, opacity: 0.85 }}).addTo(fallbackMap);
+            window.L.polyline(routeLatLon, {{ color: "{route_color}", weight: 4, opacity: 0.85 }}).addTo(fallbackMap);
           }}
 
           if (payload.start_feature && payload.start_feature.geometry && Array.isArray(payload.start_feature.geometry.coordinates)) {{
             const s = payload.start_feature.geometry.coordinates;
             window.L.circleMarker([s[1], s[0]], {{
               radius: 8,
-              color: "#2563EB",
-              fillColor: "#3D5FCC",
+              color: "{route_color_dark}",
+              fillColor: "{route_color}",
               fillOpacity: 1,
               weight: 2
-            }}).addTo(fallbackMap).bindPopup("\u0646\u0642\u0637\u0647 \u0634\u0631\u0648\u0639 \u0648\u06cc\u0632\u06cc\u062a\u0648\u0631");
+            }}).addTo(fallbackMap).bindPopup({json.dumps(start_point_label, ensure_ascii=False)});
           }}
 
           const bounds = [];
@@ -742,11 +777,11 @@ def _render_maplibre_vector_map(
             }}).addTo(fallbackMap);
             const routeOrder = p.route_order !== null && p.route_order !== undefined ? String(p.route_order) : "?";
             marker.bindPopup(
-              '<div style="direction:rtl;text-align:right;font-family:IRANSansFaNum,IRANSans FaNum,Vazirmatn,IRAN Sans,Tahoma,Arial,sans-serif;line-height:1.8;">' +
-              '<b>\u0641\u0631\u0648\u0634\u06af\u0627\u0647:</b> ' + String(p.store_code || "") + ' \u2014 ' + String(p.store_name || "") + '<br/>' +
-              '<b>\u06af\u0631\u06cc\u062f:</b> ' + String(p.store_grade || "\u0646\u0627\u0645\u0634\u062e\u0635") + '<br/>' +
-              '<b>\u062a\u0631\u062a\u06cc\u0628 \u0645\u0633\u06cc\u0631:</b> ' + routeOrder + '<br/>' +
-              '<b>\u0648\u0636\u0639\u06cc\u062a:</b> ' + String(p.assignment_status || "\u2014") +
+              '<div style="direction:{popup_direction};text-align:{popup_align};font-family:IRANSansFaNum,IRANSans FaNum,Vazirmatn,IRAN Sans,Tahoma,Arial,sans-serif;line-height:1.8;">' +
+              '<b>{store_label}:</b> ' + String(p.store_code || "") + ' — ' + String(p.store_name || "") + '<br/>' +
+              '<b>{grade_label}:</b> ' + String(p.store_grade || "{unknown_label}") + '<br/>' +
+              '<b>{route_order_label}:</b> ' + routeOrder + '<br/>' +
+              '<b>{status_label}:</b> ' + String(p.assignment_status || "—") +
               '</div>'
             );
             bounds.push([coords[1], coords[0]]);
@@ -839,14 +874,14 @@ def _render_maplibre_vector_map(
               map.addSource("bex-route", {{ type: "geojson", data: payload.route_feature }});
             }}
             if (payload.route_feature && !map.getLayer("bex-route-line")) {{
-              map.addLayer({{ id: "bex-route-line", type: "line", source: "bex-route", paint: {{ "line-color": "#3D5FCC", "line-width": 4, "line-opacity": 0.9 }} }});
+              map.addLayer({{ id: "bex-route-line", type: "line", source: "bex-route", paint: {{ "line-color": "{route_color}", "line-width": 4, "line-opacity": 0.9 }} }});
             }}
 
             if (payload.start_feature && !map.getSource("bex-start")) {{
               map.addSource("bex-start", {{ type: "geojson", data: {{ type: "FeatureCollection", features: [payload.start_feature] }} }});
             }}
             if (payload.start_feature && !map.getLayer("bex-start-circle")) {{
-              map.addLayer({{ id: "bex-start-circle", type: "circle", source: "bex-start", paint: {{ "circle-color": "#3D5FCC", "circle-radius": 7, "circle-stroke-color": "#FFFFFF", "circle-stroke-width": 2 }} }});
+              map.addLayer({{ id: "bex-start-circle", type: "circle", source: "bex-start", paint: {{ "circle-color": "{route_color}", "circle-radius": 7, "circle-stroke-color": "#FFFFFF", "circle-stroke-width": 2 }} }});
             }}
 
             if (!map.getSource("bex-stops")) {{
@@ -867,10 +902,10 @@ def _render_maplibre_vector_map(
                 const p = f.properties || {{}};
                 const routeOrder = p.route_order ? String(p.route_order) : "?";
                 const html =
-                  "<div><b>\u0641\u0631\u0648\u0634\u06af\u0627\u0647:</b> " + (p.store_code || "") + " \u2014 " + (p.store_name || "") + "<br/>" +
-                  "<b>\u06af\u0631\u06cc\u062f:</b> " + (p.store_grade || "\u0646\u0627\u0645\u0634\u062e\u0635") + "<br/>" +
-                  "<b>\u062a\u0631\u062a\u06cc\u0628 \u0645\u0633\u06cc\u0631:</b> " + routeOrder + "<br/>" +
-                  "<b>\u0648\u0636\u0639\u06cc\u062a:</b> " + (p.assignment_status || "\u2014") + "</div>";
+                  "<div style='direction:{popup_direction};text-align:{popup_align};'><b>{store_label}:</b> " + (p.store_code || "") + " — " + (p.store_name || "") + "<br/>" +
+                  "<b>{grade_label}:</b> " + (p.store_grade || "{unknown_label}") + "<br/>" +
+                  "<b>{route_order_label}:</b> " + routeOrder + "<br/>" +
+                  "<b>{status_label}:</b> " + (p.assignment_status || "—") + "</div>";
                 new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
               }});
               map.on("mouseenter", "bex-stop-circles", function() {{
@@ -924,11 +959,11 @@ def render_route_map(
     show_runtime_messages: bool = True,
 ) -> None:
     if stops_df.empty:
-        st.info("هیچ نقطه مسیری برای نمایش روی نقشه وجود ندارد.")
+        st.info(t("هیچ نقطه مسیری برای نمایش روی نقشه وجود ندارد.", "No route points are available to display on the map."))
         return
 
     if not {"lat", "lon"}.issubset(stops_df.columns):
-        st.warning("به دلیل نبود مختصات، نمایش نقشه ممکن نیست.")
+        st.warning(t("به دلیل نبود مختصات، نمایش نقشه ممکن نیست.", "Map cannot be displayed because coordinates are missing."))
         return
 
     safe_df = stops_df.copy()
@@ -939,7 +974,7 @@ def render_route_map(
 
     store_points = safe_df.dropna(subset=["lat", "lon"]).copy()
     if store_points.empty:
-        st.warning("مختصات معتبر برای فروشگاه‌های تخصیص‌یافته پیدا نشد.")
+        st.warning(t("مختصات معتبر برای فروشگاه‌های تخصیص‌یافته پیدا نشد.", "No valid coordinates were found for assigned stores."))
         return
 
     effective_runtime_status = (
@@ -989,28 +1024,31 @@ def render_route_map(
             (
                 '<span style="display:inline-flex;align-items:center;gap:.35rem;">'
                 f'<span style="width:12px;height:12px;border-radius:999px;display:inline-block;background:{style["fill"]};border:1px solid {style["stroke"]};"></span>'
-                f"گرید {grade}"
-                "</span>"
+                + t(f"گرید {grade}", f"Grade {grade}")
+                + "</span>"
             )
             for grade, style in _GRADE_STYLES.items()
         ]
     )
     st.markdown(
-        f"""<div style="display:flex;gap:1.2rem;margin-top:0.5rem;font-size:0.82rem;color:#5A6878;flex-wrap:wrap;direction:rtl;">
-            <span>نقطه شروع ویزیتور</span>
-            <span>مسیر پیشنهادی</span>
+        f"""<div style="display:flex;gap:1.2rem;margin-top:0.5rem;font-size:0.82rem;color:#5A6878;flex-wrap:wrap;direction:{direction()};">
+            <span>{t("نقطه شروع ویزیتور", "Visitor Start Point")}</span>
+            <span>{t("مسیر پیشنهادی", "Suggested Route")}</span>
             {grade_legend}
         </div>""",
         unsafe_allow_html=True,
     )
 
     if geometry_source == "osrm":
-        basis_text = "مبنای ترسیم مسیر: مسیر جاده‌ای OSRM محلی"
+        basis_text = t("مبنای ترسیم مسیر: مسیر جاده‌ای OSRM محلی", "Route basis: local OSRM road geometry")
     else:
-        basis_text = "مبنای ترسیم مسیر: خط مستقیم بین نقاط (در دسترس نبودن OSRM محلی)"
+        basis_text = t(
+            "مبنای ترسیم مسیر: خط مستقیم بین نقاط (در دسترس نبودن OSRM محلی)",
+            "Route basis: straight lines between points (local OSRM unavailable)",
+        )
     st.markdown(
         (
-            '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.15rem;">'
+            f'<div style="direction:{direction()};text-align:{align()};color:#6B7280;font-size:.85rem;margin-top:.15rem;">'
             f"{basis_text}"
             "</div>"
         ),
@@ -1020,18 +1058,21 @@ def render_route_map(
     if show_runtime_messages and not bool(
         effective_runtime_status.get("osrm_up", False)
     ):
-        st.warning("OSRM محلی در دسترس نیست؛ مسیر جاده‌ای بهینه نمایش داده نمی‌شود.")
+        st.warning(t("OSRM محلی در دسترس نیست؛ مسیر جاده‌ای بهینه نمایش داده نمی‌شود.", "Local OSRM is unavailable; optimized road geometry cannot be shown."))
     if show_runtime_messages and not bool(
         effective_runtime_status.get("tiles_up", False)
     ):
-        st.warning("Tile server محلی در دسترس نیست؛ خیابان‌ها نمایش داده نمی‌شوند.")
+        st.warning(t("Tile server محلی در دسترس نیست؛ خیابان‌ها نمایش داده نمی‌شوند.", "Local tile server is unavailable; streets will not be shown."))
     if (
         show_runtime_messages
         and tile_mode == "vector"
         and not bool(effective_runtime_status.get("fonts_available", False))
     ):
         st.info(
-            "Tile محلی از نوع وکتور خام است؛ نمایش نام خیابان‌ها ممکن است محدود باشد."
+            t(
+                "Tile محلی از نوع وکتور خام است؛ نمایش نام خیابان‌ها ممکن است محدود باشد.",
+                "Local tile source is raw vector; street-name rendering may be limited.",
+            )
         )
     if show_runtime_messages and tile_mode == "vector":
         outside_count, total_count = _count_markers_outside_vector_bounds(
@@ -1043,12 +1084,17 @@ def render_route_map(
                 effective_runtime_status.get("vector_dataset_id") or "current"
             ).strip() or "current"
             outside_ratio = outside_count / total_count
-            message = (
+            message = t(
                 f"پوشش دیتاست وکتور فعلی ({dataset_id}) محدود است: "
                 f"{outside_count} از {total_count} نقطه خارج از محدوده MBTiles هستند؛ "
                 "برای این نقاط، خیابان‌ها خاکستری/خالی دیده می‌شوند. "
                 "برای پوشش کامل‌تر می‌توانید MBTiles ایران (یا محدوده بزرگ‌تر) را جایگزین کنید "
-                "و در صورت وجود چند دیتاست، MAP_VECTOR_DATASET_ID را روی دیتاست مناسب بگذارید."
+                "و در صورت وجود چند دیتاست، MAP_VECTOR_DATASET_ID را روی دیتاست مناسب بگذارید.",
+                f"Current vector dataset coverage ({dataset_id}) is limited: "
+                f"{outside_count} out of {total_count} points are outside MBTiles bounds. "
+                "For those points, streets may look empty/gray. "
+                "For broader coverage, replace MBTiles with an Iran-wide (or larger) dataset "
+                "and if multiple datasets exist, set MAP_VECTOR_DATASET_ID to the correct one.",
             )
             if outside_ratio >= 0.35:
                 st.warning(message)
@@ -1059,5 +1105,8 @@ def render_route_map(
         effective_runtime_status.get("using_public_raster_fallback", False)
     ):
         st.success(
-            "برای نمایش شمایل کامل نقشه (خیابان‌ها/نام معابر)، نقشه پایه رستر فعال شده است."
+            t(
+                "برای نمایش شمایل کامل نقشه (خیابان‌ها/نام معابر)، نقشه پایه رستر فعال شده است.",
+                "Raster fallback basemap is enabled to show full street visuals and labels.",
+            )
         )

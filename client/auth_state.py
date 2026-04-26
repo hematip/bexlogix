@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 
 import streamlit as st
 
+from client.i18n import t
+
 AUTH_USER_ID_KEY = "auth_user_id"
 AUTH_USERNAME_KEY = "auth_username"
 AUTH_ROLE_KEY = "auth_role"
@@ -86,8 +88,12 @@ def touch_session() -> None:
     acknowledged = bool(st.session_state.get(SESSION_EXPIRY_WARNING_ACK_KEY, False))
     if 0 < remaining_minutes < 30 and not acknowledged:
         st.session_state[SESSION_EXPIRY_WARNING_KEY] = (
-            f"جلسه شما حدود {int(round(remaining_minutes))} دقیقه دیگر منقضی می‌شود. "
-            "برای ادامه کار صفحه را رفرش کنید."
+            t(
+                f"جلسه شما حدود {int(round(remaining_minutes))} دقیقه دیگر منقضی می‌شود. "
+                "برای ادامه کار صفحه را رفرش کنید.",
+                f"Your session expires in about {int(round(remaining_minutes))} minutes. "
+                "Refresh the page to continue.",
+            )
         )
     else:
         st.session_state.pop(SESSION_EXPIRY_WARNING_KEY, None)

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import streamlit as st
 
 from client import auth_state
+from client.i18n import is_fa, t
 from client.styles.neumorphism import inject_global_css, render_login_logo
 from server.app.auth.session import authenticate_user, change_password
 from server.app.enums.roles import UserRole
@@ -50,7 +51,10 @@ def _get_lock_state() -> tuple[bool, int]:
 def _format_remaining_time(total_seconds: int) -> str:
     minutes = total_seconds // 60
     seconds = total_seconds % 60
-    return f"{minutes} دقیقه و {seconds} ثانیه"
+    return t(
+        f"{minutes} دقیقه و {seconds} ثانیه",
+        f"{minutes} minutes and {seconds} seconds",
+    )
 
 
 def _register_failed_login_attempt() -> None:
@@ -72,10 +76,10 @@ def render_login_page() -> None:
     render_login_logo()
 
     st.markdown(
-        """
+        f"""
         <div class="login-title-block">
-            <div class="login-title-main">ورود به BexLogix</div>
-            <div class="login-title-sub">سیستم مدیریت عملیات فروش میدانی</div>
+            <div class="login-title-main">{t("ورود به BexLogix", "Sign In")}</div>
+            <div class="login-title-sub">{t("سیستم مدیریت عملیات فروش میدانی", "Field Sales Operations Management System")}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -83,24 +87,34 @@ def render_login_page() -> None:
 
     is_locked, remaining_seconds = _get_lock_state()
     if is_locked:
-        st.error(f"حساب کاربری { _format_remaining_time(remaining_seconds) } دیگر قابل دسترسی است.")
+        st.error(
+            t(
+                f"حساب کاربری { _format_remaining_time(remaining_seconds) } دیگر قابل دسترسی است.",
+                f"This account is locked for another { _format_remaining_time(remaining_seconds) }.",
+            )
+        )
 
     with st.form("login_form", clear_on_submit=False):
-        username = st.text_input("نام کاربری", key="login_username")
-        password = st.text_input("رمز عبور", type="password", key="login_password")
+        username = st.text_input(t("نام کاربری", "Username"), key="login_username")
+        password = st.text_input(t("رمز عبور", "Password"), type="password", key="login_password")
 
         if _contains_persian_text(password):
             st.warning(
-                "رمز عبور را با صفحه‌کلید فارسی تایپ کرده‌اید. "
-                "در صورت خطای ورود، زبان صفحه‌کلید را روی English قرار دهید."
+                t(
+                    "رمز عبور را با صفحه‌کلید فارسی تایپ کرده‌اید. "
+                    "در صورت خطای ورود، زبان صفحه‌کلید را روی English قرار دهید.",
+                    "Your password appears to be typed with a Persian keyboard layout. "
+                    "If login fails, switch your keyboard to English.",
+                )
             )
 
-        submitted = st.form_submit_button("ورود", use_container_width=True, disabled=is_locked)
+        submitted = st.form_submit_button(t("ورود", "Sign In"), use_container_width=True, disabled=is_locked)
 
-    st.markdown(
-        '<p class="login-footer-powered">Powered by <strong>Kanoon Iran Novin</strong></p>',
-        unsafe_allow_html=True,
-    )
+    if is_fa():
+        st.markdown(
+            '<p class="login-footer-powered">Powered by <strong>Kanoon Iran Novin</strong></p>',
+            unsafe_allow_html=True,
+        )
 
     if not submitted:
         return
@@ -110,7 +124,7 @@ def render_login_page() -> None:
 
     if not user:
         _register_failed_login_attempt()
-        st.error("نام کاربری یا رمز عبور اشتباه است، یا حساب کاربر غیرفعال است.")
+        st.error(t("نام کاربری یا رمز عبور اشتباه است، یا حساب کاربر غیرفعال است.", "Incorrect username/password, or the account is inactive."))
         return
 
     _reset_login_rate_limit()
@@ -136,24 +150,24 @@ def render_forced_password_change(current_user: dict) -> None:
     # FIX: [SEC-01] Block dashboard access until temporary password is rotated.
     render_login_logo()
     st.markdown(
-        """
+        f"""
         <div class="login-title-block">
-            <div class="login-title-main">تغییر رمز عبور الزامی است</div>
-            <div class="login-title-sub">برای ادامه کار، ابتدا رمز عبور جدید تعیین کنید.</div>
+            <div class="login-title-main">{t("تغییر رمز عبور الزامی است", "Password Change Required")}</div>
+            <div class="login-title-sub">{t("برای ادامه کار، ابتدا رمز عبور جدید تعیین کنید.", "Set a new password to continue.")}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
     with st.form("force_change_password_form"):
-        current_password = st.text_input("رمز عبور فعلی", type="password")
-        new_password = st.text_input("رمز عبور جدید", type="password")
-        confirm_password = st.text_input("تکرار رمز عبور جدید", type="password")
-        submitted = st.form_submit_button("ذخیره رمز جدید", use_container_width=True)
+        current_password = st.text_input(t("رمز عبور فعلی", "Current Password"), type="password")
+        new_password = st.text_input(t("رمز عبور جدید", "New Password"), type="password")
+        confirm_password = st.text_input(t("تکرار رمز عبور جدید", "Confirm New Password"), type="password")
+        submitted = st.form_submit_button(t("ذخیره رمز جدید", "Save New Password"), use_container_width=True)
 
     if not submitted:
         return
     if new_password != confirm_password:
-        st.error("رمز عبور جدید و تکرار آن یکسان نیست.")
+        st.error(t("رمز عبور جدید و تکرار آن یکسان نیست.", "New password and confirmation do not match."))
         return
 
     try:
@@ -164,7 +178,7 @@ def render_forced_password_change(current_user: dict) -> None:
                 current_password=current_password,
                 new_password=new_password,
             )
-        st.success("رمز عبور با موفقیت تغییر کرد. لطفاً دوباره وارد شوید.")
+        st.success(t("رمز عبور با موفقیت تغییر کرد. لطفاً دوباره وارد شوید.", "Password changed successfully. Please sign in again."))
         auth_state.logout_user()
         auth_state.clear_persistent_login_query()
         st.query_params["view"] = "login"

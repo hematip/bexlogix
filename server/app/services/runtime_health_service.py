@@ -504,10 +504,33 @@ def _probe_tiles(
                 vector_bounds,
                 False,
             )
+        # FIX: [OFFLINE-MAP-01] Allow public raster fallback even when no local
+        # raster template exists (vector-only auto mode with offline tile outage).
+        public_ok, public_latency, public_error, public_template = _probe_public_raster_fallback(
+            timeout_seconds
+        )
+        if public_ok:
+            resolved_latency = public_latency if public_latency is not None else vector_latency
+            return (
+                True,
+                resolved_latency,
+                None,
+                public_template,
+                "raster",
+                vector_template,
+                False,
+                vector_layer_ids,
+                vector_dataset_id,
+                vector_bounds,
+                True,
+            )
+        resolved_error = vector_error
+        if public_error and public_error != "public_raster_not_configured":
+            resolved_error = f"{vector_error}|{public_error}"
         return (
             False,
             vector_latency,
-            vector_error,
+            resolved_error,
             "",
             "none",
             vector_template,

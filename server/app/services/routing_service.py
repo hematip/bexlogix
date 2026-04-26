@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import socket
+import time
 from dataclasses import dataclass
 from datetime import date
 from math import asin, cos, radians, sin, sqrt
@@ -21,6 +22,20 @@ from server.app.repositories import assignment_repository, visitor_repository
 from server.app.services import runtime_health_service
 
 logger = logging.getLogger(__name__)
+
+_TRANSIENT_HTTP_STATUSES = {502, 503, 504}
+_REQUEST_RETRY_DELAYS_SECONDS = (0.25, 0.75, 1.5)
+
+
+def _is_transient_http_error(exc: HTTPError) -> bool:
+    return int(getattr(exc, "code", 0) or 0) in _TRANSIENT_HTTP_STATUSES
+
+
+def _is_transient_url_error(exc: URLError) -> bool:
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, TimeoutError | socket.timeout):
+        return True
+    return bool(reason and "timed out" in str(reason).lower())
 
 
 # Contract: RouteStop defines a typed boundary and should remain behavior-stable.
@@ -92,11 +107,29 @@ def _build_osrm_coordinate_segment(points: list[tuple[float, float]]) -> str:
 
 # Contract: _request_osrm_payload executes one deterministic step in the workflow.
 def _request_osrm_payload(url: str, timeout_seconds: float) -> dict:
-    with urlopen(url, timeout=timeout_seconds) as response:
-        status_code = getattr(response, "status", None)
-        if status_code is not None and int(status_code) >= 400:
-            raise ValueError(f"OSRM HTTP status: {status_code}")
-        return json.loads(response.read().decode("utf-8"))
+    last_error: Exception | None = None
+    for attempt_index in range(len(_REQUEST_RETRY_DELAYS_SECONDS) + 1):
+        try:
+            with urlopen(url, timeout=timeout_seconds) as response:
+                status_code = getattr(response, "status", None)
+                if status_code is not None and int(status_code) >= 400:
+                    raise ValueError(f"OSRM HTTP status: {status_code}")
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            last_error = exc
+            should_retry = _is_transient_http_error(exc)
+        except (TimeoutError, socket.timeout) as exc:
+            last_error = exc
+            should_retry = True
+        except URLError as exc:
+            last_error = exc
+            should_retry = _is_transient_url_error(exc)
+        if not should_retry or attempt_index >= len(_REQUEST_RETRY_DELAYS_SECONDS):
+            break
+        time.sleep(_REQUEST_RETRY_DELAYS_SECONDS[attempt_index])
+    if last_error is not None:
+        raise last_error
+    raise ValueError("OSRM request failed.")
 
 
 # Contract: _request_json_post executes one deterministic step in the workflow.
@@ -108,11 +141,29 @@ def _request_json_post(url: str, timeout_seconds: float, payload: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(request, timeout=timeout_seconds) as response:
-        status_code = getattr(response, "status", None)
-        if status_code is not None and int(status_code) >= 400:
-            raise ValueError(f"VROOM HTTP status: {status_code}")
-        return json.loads(response.read().decode("utf-8"))
+    last_error: Exception | None = None
+    for attempt_index in range(len(_REQUEST_RETRY_DELAYS_SECONDS) + 1):
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                status_code = getattr(response, "status", None)
+                if status_code is not None and int(status_code) >= 400:
+                    raise ValueError(f"VROOM HTTP status: {status_code}")
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            last_error = exc
+            should_retry = _is_transient_http_error(exc)
+        except (TimeoutError, socket.timeout) as exc:
+            last_error = exc
+            should_retry = True
+        except URLError as exc:
+            last_error = exc
+            should_retry = _is_transient_url_error(exc)
+        if not should_retry or attempt_index >= len(_REQUEST_RETRY_DELAYS_SECONDS):
+            break
+        time.sleep(_REQUEST_RETRY_DELAYS_SECONDS[attempt_index])
+    if last_error is not None:
+        raise last_error
+    raise ValueError("VROOM request failed.")
 
 
 # Contract: NearestNeighborRoutePlanner defines a typed boundary and should remain behavior-stable.

@@ -12,6 +12,7 @@ import streamlit as st
 
 from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
+from client.i18n import t
 from client.components.rtl_table import render_rtl_table
 from client.styles.neumorphism import neu_metric, neu_section_header, render_page_title
 from server.app.enums.contact_status import ContactStatus
@@ -19,17 +20,20 @@ from server.app.enums.telesales_outcome import TelesalesOutcome
 from server.app.services import telesales_service
 from server.db.database import get_db
 
-CONTACT_LABELS = {
-    ContactStatus.REACHED.value: "تماس برقرار شد",
-    ContactStatus.NOT_REACHED.value: "عدم برقراری تماس",
-}
+def _contact_labels() -> dict[str, str]:
+    return {
+        ContactStatus.REACHED.value: t("تماس برقرار شد", "Reached"),
+        ContactStatus.NOT_REACHED.value: t("عدم برقراری تماس", "Not Reached"),
+    }
 
-OUTCOME_LABELS = {
-    TelesalesOutcome.SALE_DONE.value: "فروش انجام شد",
-    TelesalesOutcome.NO_NEED.value: "نیازی نبود",
-    TelesalesOutcome.POSTPONE.value: "موکول شد",
-    TelesalesOutcome.INVALID.value: "نامعتبر",
-}
+
+def _outcome_labels() -> dict[str, str]:
+    return {
+        TelesalesOutcome.SALE_DONE.value: t("فروش انجام شد", "Sale Done"),
+        TelesalesOutcome.NO_NEED.value: t("نیازی نبود", "No Need"),
+        TelesalesOutcome.POSTPONE.value: t("موکول شد", "Postponed"),
+        TelesalesOutcome.INVALID.value: t("نامعتبر", "Invalid"),
+    }
 
 ITEMS_PER_PAGE = 10
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -58,10 +62,13 @@ def _get_paginated_slice(items: list[dict], page: int) -> tuple[list[dict], int,
     return items[start_idx:end_idx], safe_page, start_idx + 1 if total > 0 else 0, end_idx
 
 def render_telesales_panel(current_user: dict) -> None:
-    render_page_title("پنل فروش تلفنی")
+    contact_labels = _contact_labels()
+    outcome_labels = _outcome_labels()
+
+    render_page_title(t("پنل فروش تلفنی", "Telesales Panel"))
 
     as_of_date = jalali_date_input(
-        label="📅 نمایش موارد تا تاریخ",
+        label=t("📅 نمایش موارد تا تاریخ", "📅 Show Items Up To Date"),
         key_prefix="telesales_as_of_date",
         default_gregorian=date.today(),
     )
@@ -74,7 +81,7 @@ def render_telesales_panel(current_user: dict) -> None:
 
     c1, _ = st.columns([1, 3])
     with c1:
-        neu_metric("آیتم‌های در انتظار", len(pending_followups))
+        neu_metric(t("آیتم‌های در انتظار", "Pending Items"), len(pending_followups))
 
     if not pending_followups:
         st.success(get_empty_state_message(role="telesales", context="no_queue"))
@@ -93,17 +100,24 @@ def render_telesales_panel(current_user: dict) -> None:
 
     nav_left, nav_center, nav_right = st.columns([1, 2, 1], gap="small")
     with nav_left:
-        if st.button("قبلی", key="telesales_prev_page", disabled=page <= 1, use_container_width=True):
+        if st.button(t("قبلی", "Previous"), key="telesales_prev_page", disabled=page <= 1, use_container_width=True):
             st.session_state["telesales_page"] = max(page - 1, 1)
             st.rerun()
     with nav_center:
         st.markdown(
-            f'<div class="panel-description" style="text-align:center !important;">آیتم {from_item} تا {to_item} از {total_items} | صفحه {page} از {total_pages}</div>',
+            (
+                f'<div class="panel-description" style="text-align:center !important;">'
+                + t(
+                    f"آیتم {from_item} تا {to_item} از {total_items} | صفحه {page} از {total_pages}",
+                    f"Item {from_item} to {to_item} of {total_items} | Page {page} of {total_pages}",
+                )
+                + "</div>"
+            ),
             unsafe_allow_html=True,
         )
     with nav_right:
         if st.button(
-            "بعدی",
+            t("بعدی", "Next"),
             key="telesales_next_page",
             disabled=page >= total_pages,
             use_container_width=True,
@@ -112,15 +126,15 @@ def render_telesales_panel(current_user: dict) -> None:
             st.rerun()
 
     st.markdown('<div class="section-gap-lg"></div>', unsafe_allow_html=True)
-    neu_section_header("صف پیگیری در انتظار")
+    neu_section_header(t("صف پیگیری در انتظار", "Pending Follow-up Queue"))
     queue_df = pd.DataFrame(
         [
             {
-                "پیگیری": item["followup_id"],
-                "تاریخ پیگیری": item["followup_date"],
-                "فروشگاه": f"{item['store_code']} — {item['store_name']}",
-                "ویزیتور": _safe_text(item.get("visitor_code")),
-                "علت عدم انجام ویزیت": _safe_text(item.get("unavailable_reason")),
+                t("پیگیری", "Follow-up"): item["followup_id"],
+                t("تاریخ پیگیری", "Follow-up Date"): item["followup_date"],
+                t("فروشگاه", "Store"): f"{item['store_code']} — {item['store_name']}",
+                t("ویزیتور", "Visitor"): _safe_text(item.get("visitor_code")),
+                t("علت عدم انجام ویزیت", "Visit Not Completed Reason"): _safe_text(item.get("unavailable_reason")),
             }
             for item in page_items
         ]
@@ -131,67 +145,70 @@ def render_telesales_panel(current_user: dict) -> None:
         max_height_px=340,
     )
 
-    neu_section_header("ثبت نتیجه پیگیری")
+    neu_section_header(t("ثبت نتیجه پیگیری", "Submit Follow-up Result"))
     for item in page_items:
         followup_id = item["followup_id"]
-        title = f"{item['store_code']} — {item['store_name']} | پیگیری #{followup_id}"
+        title = t(
+            f"{item['store_code']} — {item['store_name']} | پیگیری #{followup_id}",
+            f"{item['store_code']} — {item['store_name']} | Follow-up #{followup_id}",
+        )
 
         with st.expander(title):
             st.markdown('<div class="neu-card-flat">', unsafe_allow_html=True)
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>تاریخ پیگیری:</strong> {_safe_text(item.get("followup_date"))}</div>',
+                f'<div class="telesales-detail-line"><strong>{t("تاریخ پیگیری", "Follow-up Date")}:</strong> {_safe_text(item.get("followup_date"))}</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>تاریخ ویزیت قرمز:</strong> {_safe_text(item.get("visit_date"))}</div>',
+                f'<div class="telesales-detail-line"><strong>{t("تاریخ ویزیت قرمز", "Red Visit Date")}:</strong> {_safe_text(item.get("visit_date"))}</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>ویزیتور:</strong> {_safe_text(item.get("visitor_code"))}</div>',
+                f'<div class="telesales-detail-line"><strong>{t("ویزیتور", "Visitor")}:</strong> {_safe_text(item.get("visitor_code"))}</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>منطقه فروشگاه:</strong> {_safe_text(item.get("store_region"))}</div>',
+                f'<div class="telesales-detail-line"><strong>{t("منطقه فروشگاه", "Store Region")}:</strong> {_safe_text(item.get("store_region"))}</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>آدرس فروشگاه:</strong> {_safe_text(item.get("store_address"))}</div>',
+                f'<div class="telesales-detail-line"><strong>{t("آدرس فروشگاه", "Store Address")}:</strong> {_safe_text(item.get("store_address"))}</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>مختصات:</strong> <span class="ltr-inline">{_safe_text(item.get("store_lat"))}, {_safe_text(item.get("store_lon"))}</span></div>',
+                f'<div class="telesales-detail-line"><strong>{t("مختصات", "Coordinates")}:</strong> <span class="ltr-inline">{_safe_text(item.get("store_lat"))}, {_safe_text(item.get("store_lon"))}</span></div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>علت عدم انجام ویزیت:</strong> {_safe_text(item.get("unavailable_reason"))}</div>',
+                f'<div class="telesales-detail-line"><strong>{t("علت عدم انجام ویزیت", "Visit Not Completed Reason")}:</strong> {_safe_text(item.get("unavailable_reason"))}</div>',
                 unsafe_allow_html=True,
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
             with st.form(f"followup_{followup_id}"):
                 selected_contact = st.selectbox(
-                    "وضعیت تماس",
-                    options=list(CONTACT_LABELS.values()),
+                    t("وضعیت تماس", "Contact Status"),
+                    options=list(contact_labels.values()),
                     key=f"contact_{followup_id}",
                 )
                 contact_status = next(
-                    code for code, label in CONTACT_LABELS.items() if label == selected_contact
+                    code for code, label in contact_labels.items() if label == selected_contact
                 )
 
                 selected_outcome = st.selectbox(
-                    "نتیجه پیگیری",
-                    options=list(OUTCOME_LABELS.values()),
+                    t("نتیجه پیگیری", "Follow-up Result"),
+                    options=list(outcome_labels.values()),
                     key=f"result_{followup_id}",
                 )
                 outcome = next(
-                    code for code, label in OUTCOME_LABELS.items() if label == selected_outcome
+                    code for code, label in outcome_labels.items() if label == selected_outcome
                 )
                 note = st.text_area(
-                    "یادداشت اپراتور",
+                    t("یادداشت اپراتور", "Operator Note"),
                     key=f"note_{followup_id}",
-                    placeholder="یادداشت اختیاری پیگیری...",
+                    placeholder=t("یادداشت اختیاری پیگیری...", "Optional follow-up note..."),
                 )
-                submitted = st.form_submit_button("ذخیره نتیجه", use_container_width=True)
+                submitted = st.form_submit_button(t("ذخیره نتیجه", "Save Result"), use_container_width=True)
 
             if submitted:
                 try:
@@ -204,10 +221,10 @@ def render_telesales_panel(current_user: dict) -> None:
                             result=outcome,
                             note=note,
                         )
-                    st.success("نتیجه پیگیری با موفقیت ذخیره شد.")
+                    st.success(t("نتیجه پیگیری با موفقیت ذخیره شد.", "Follow-up result saved successfully."))
                     # FIX: [UX-02] Keep current page after submit to prevent scroll loss.
                     st.session_state["telesales_page"] = page
                     st.cache_data.clear()
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"خطا در ذخیره نتیجه: {exc}")
+                    st.error(t(f"خطا در ذخیره نتیجه: {exc}", f"Error saving result: {exc}"))

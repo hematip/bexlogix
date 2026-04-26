@@ -13,6 +13,7 @@ import streamlit as st
 from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
 from client.components.route_map import render_route_map
+from client.i18n import align, direction, is_fa, start_side, t
 from client.styles.neumorphism import (
     neu_section_header,
     render_metric_grid,
@@ -30,11 +31,12 @@ RESULT_COLORS = {
     "red": "#E74C3C",
 }
 
-VISIT_RESULT_LABELS = {
-    VisitResult.GREEN.value: "سبز (خرید انجام شد)",
-    VisitResult.YELLOW.value: "زرد (ویزیت شد، فروش نشد)",
-    VisitResult.RED.value: "قرمز (ویزیت انجام نشد)",
-}
+def _visit_result_labels() -> dict[str, str]:
+    return {
+        VisitResult.GREEN.value: t("سبز (خرید انجام شد)", "Green (sale completed)"),
+        VisitResult.YELLOW.value: t("زرد (ویزیت شد، فروش نشد)", "Yellow (visited, no sale)"),
+        VisitResult.RED.value: t("قرمز (ویزیت انجام نشد)", "Red (visit not completed)"),
+    }
 
 _EMPTY_NOTE_MARKERS = {
     "",
@@ -89,14 +91,18 @@ def _render_visit_progress(completed_count: int, total_stops: int) -> float:
     # FIX: Visitor progress bar should be RTL and have right-aligned descriptive text.
     progress_ratio = (completed_count / total_stops) if total_stops else 0.0
     progress_pct = int(round(progress_ratio * 100))
-    progress_fill_color = "#27AE60" if progress_pct >= 100 else "#3D5FCC"
+    progress_fill_color = "#27AE60" if progress_pct >= 100 else ("#3D5FCC" if is_fa() else "#D9A300")
+    progress_note = t(
+        f"{completed_count} از {total_stops} ویزیت انجام شده ({progress_pct}٪)",
+        f"{completed_count} of {total_stops} visits completed ({progress_pct}%)",
+    )
     st.markdown(
         f"""
         <div class="visitor-progress-wrap">
             <div class="visitor-progress-track">
                 <div class="visitor-progress-fill" style="width:{progress_pct}%; background:{progress_fill_color};"></div>
             </div>
-            <div class="visitor-progress-note">{completed_count} از {total_stops} ویزیت انجام شده ({progress_pct}٪)</div>
+            <div class="visitor-progress-note">{progress_note}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -112,7 +118,7 @@ def _render_grade_distribution(assignments_df: pd.DataFrame) -> None:
     order = ["VIP", "A+", "A", "B", "C"]
     counts = (
         assignments_df["store_grade"]
-        .fillna("نامشخص")
+        .fillna(t("نامشخص", "Unknown"))
         .astype(str)
         .str.strip()
         .str.upper()
@@ -122,24 +128,26 @@ def _render_grade_distribution(assignments_df: pd.DataFrame) -> None:
     parts = [f"{int(counts[g])} {g}" for g in order if int(counts.get(g, 0)) > 0]
     unknown_count = int(sum(v for k, v in counts.items() if k not in set(order)))
     if unknown_count > 0:
-        parts.append(f"{unknown_count} نامشخص")
+        parts.append(t(f"{unknown_count} نامشخص", f"{unknown_count} Unknown"))
 
     if parts:
         st.markdown(
-            f'<div class="panel-description"><strong>ترکیب گرید فروشگاه‌های مسیر:</strong> {" | ".join(parts)}</div>',
+            f'<div class="panel-description"><strong>{t("ترکیب گرید فروشگاه‌های مسیر:", "Route Store Grade Mix:")}</strong> {" | ".join(parts)}</div>',
             unsafe_allow_html=True,
         )
 
 
 def render_visitor_panel(current_user: dict) -> None:
-    render_page_title("مسیر من")
+    visit_result_labels = _visit_result_labels()
+
+    render_page_title(t("مسیر من", "My Route"))
     profile = _cached_visitor_profile(current_user["id"])
     if not profile:
-        st.error("برای این حساب کاربری پروفایل ویزیتور پیدا نشد.")
+        st.error(t("برای این حساب کاربری پروفایل ویزیتور پیدا نشد.", "No visitor profile was found for this account."))
         return
 
     work_date = jalali_date_input(
-        label="📅 تاریخ کاری",
+        label=t("📅 تاریخ کاری", "📅 Work Date"),
         key_prefix="visitor_work_date",
         default_gregorian=date.today(),
     )
@@ -159,24 +167,24 @@ def render_visitor_panel(current_user: dict) -> None:
     st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
     render_metric_grid(
         [
-            ("تعداد توقف", total_stops),
-            ("تکمیل‌شده", completed_count),
-            ("مسافت مسیر (km)", f"{max_distance:.1f}"),
+            (t("تعداد توقف", "Stops"), total_stops),
+            (t("تکمیل‌شده", "Completed"), completed_count),
+            (t("مسافت مسیر (km)", "Route Distance (km)"), f"{max_distance:.1f}"),
         ]
     )
     _render_grade_distribution(assignments_df)
     progress_ratio = _render_visit_progress(completed_count=completed_count, total_stops=total_stops)
     if progress_ratio >= 1:
-        st.success("همه توقف‌ها کامل شد. مسیر امروز با موفقیت پایان یافت.")
+        st.success(t("همه توقف‌ها کامل شد. مسیر امروز با موفقیت پایان یافت.", "All stops are complete. Today's route has finished successfully."))
 
-    neu_section_header("نقشه مسیر")
+    neu_section_header(t("نقشه مسیر", "Route Map"))
     runtime_state = runtime_health_service.get_offline_runtime_status()
     if (not bool(runtime_state.get("osrm_up", False))) or (not bool(runtime_state.get("tiles_up", False))):
-        st.info("حالت کاهشی فعال است: اگر سرویس محلی در دسترس نباشد، نقشه بدون خیابان یا با مسیر خطی نمایش داده می‌شود.")
+        st.info(t("حالت کاهشی فعال است: اگر سرویس محلی در دسترس نباشد، نقشه بدون خیابان یا با مسیر خطی نمایش داده می‌شود.", "Degraded mode is active: if local services are unavailable, the map is shown without streets or with straight-line routing."))
     if not bool(runtime_state.get("osrm_data_ready", False)):
-        st.warning("فایل داده OSRM پیدا نشد (offline/osrm/data/tehran-latest.osrm).")
+        st.warning(t("فایل داده OSRM پیدا نشد (offline/osrm/data/tehran-latest.osrm).", "OSRM data file was not found (offline/osrm/data/tehran-latest.osrm)."))
     if not bool(runtime_state.get("tiles_data_ready", False)):
-        st.warning("فایل MBTiles پیدا نشد (offline/tiles/data/*.mbtiles).")
+        st.warning(t("فایل MBTiles پیدا نشد (offline/tiles/data/*.mbtiles).", "MBTiles data file was not found (offline/tiles/data/*.mbtiles)."))
     # FIX: [PERF-04] Reuse page-level runtime health state in map renderer.
     render_route_map(
         assignments_df,
@@ -191,24 +199,27 @@ def render_visitor_panel(current_user: dict) -> None:
             visitor_id=profile.id,
         )
     st.download_button(
-        label="📥 دانلود مسیر من",
+        label=t("📥 دانلود مسیر من", "📥 Download My Route"),
         data=route_buf.getvalue(),
         file_name=f"my_route_{work_date_iso}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-    neu_section_header("ثبت نتیجه ویزیت فروشگاه‌ها")
+    neu_section_header(t("ثبت نتیجه ویزیت فروشگاه‌ها", "Submit Store Visit Results"))
     for row in assignments_df.to_dict(orient="records"):
         route_order = int(row["route_order"]) if pd.notna(row["route_order"]) else "—"
-        expander_title = f"توقف {route_order} • {row['store_code']} — {row['store_name']}"
+        expander_title = t(
+            f"توقف {route_order} • {row['store_code']} — {row['store_name']}",
+            f"Stop {route_order} • {row['store_code']} — {row['store_name']}",
+        )
 
         with st.expander(expander_title, expanded=False):
             info_html = f"""
             <div class="neu-card-flat">
-                <div style="display:flex;gap:2rem;flex-wrap:wrap;direction:rtl;text-align:right;justify-content:flex-start;">
-                    <div><strong>آدرس:</strong> {row['address'] or '—'}</div>
-                    <div><strong>مختصات:</strong> {row['lat']}, {row['lon']}</div>
-                    <div><strong>وضعیت تخصیص:</strong> {status_badge(str(row['assignment_status']))}</div>
+                <div style="display:flex;gap:2rem;flex-wrap:wrap;direction:{direction()};text-align:{align()};justify-content:flex-start;">
+                    <div><strong>{t("آدرس", "Address")}:</strong> {row['address'] or '—'}</div>
+                    <div><strong>{t("مختصات", "Coordinates")}:</strong> {row['lat']}, {row['lon']}</div>
+                    <div><strong>{t("وضعیت تخصیص", "Assignment Status")}:</strong> {status_badge(str(row['assignment_status']))}</div>
                 </div>
             </div>
             """
@@ -218,11 +229,11 @@ def render_visitor_panel(current_user: dict) -> None:
                 result = str(row["visit_result"])
                 color = RESULT_COLORS.get(result, "#6C7A89")
                 note_value = _normalized_note(row.get("visit_note"))
-                note_text = note_value if note_value else "یادداشت ثبت نشده است."
+                note_text = note_value if note_value else t("یادداشت ثبت نشده است.", "No note has been registered.")
                 note_block = f"<br/><em>{html.escape(note_text)}</em>"
                 st.markdown(
-                    f"""<div class="neu-card-flat" style="border-right:4px solid {color};padding-right:1rem;direction:rtl;text-align:right;">
-                        <strong>نتیجه ثبت‌شده:</strong> {status_badge(result)}
+                    f"""<div class="neu-card-flat" style="border-{start_side()}:4px solid {color};padding-{start_side()}:1rem;direction:{direction()};text-align:{align()};">
+                        <strong>{t("نتیجه ثبت‌شده", "Recorded Result")}:</strong> {status_badge(result)}
                         {note_block}
                     </div>""",
                     unsafe_allow_html=True,
@@ -230,28 +241,28 @@ def render_visitor_panel(current_user: dict) -> None:
                 continue
 
             if row["assignment_status"] != AssignmentStatus.PUBLISHED.value:
-                st.info("ثبت نتیجه فقط برای تخصیص‌های منتشرشده فعال است.")
+                st.info(t("ثبت نتیجه فقط برای تخصیص‌های منتشرشده فعال است.", "Result submission is enabled only for published assignments."))
                 continue
 
             form_key = f"visit_{row['assignment_id']}"
             with st.form(form_key):
-                st.markdown("**ثبت نتیجه ویزیت**")
+                st.markdown(f"**{t('ثبت نتیجه ویزیت', 'Submit Visit Result')}**")
                 selected_label = st.selectbox(
-                    "نتیجه",
-                    options=list(VISIT_RESULT_LABELS.values()),
+                    t("نتیجه", "Result"),
+                    options=list(visit_result_labels.values()),
                     key=f"result_{row['assignment_id']}",
                 )
                 result = next(
                     code
-                    for code, label in VISIT_RESULT_LABELS.items()
+                    for code, label in visit_result_labels.items()
                     if label == selected_label
                 )
                 note = st.text_area(
-                    "یادداشت",
+                    t("یادداشت", "Note"),
                     key=f"note_{row['assignment_id']}",
-                    placeholder="یادداشت اختیاری برای این ویزیت...",
+                    placeholder=t("یادداشت اختیاری برای این ویزیت...", "Optional note for this visit..."),
                 )
-                submitted = st.form_submit_button("ثبت نتیجه", use_container_width=True)
+                submitted = st.form_submit_button(t("ثبت نتیجه", "Submit Result"), use_container_width=True)
 
             if submitted:
                 try:
@@ -263,8 +274,8 @@ def render_visitor_panel(current_user: dict) -> None:
                             result=result,
                             note=note,
                         )
-                    st.success("نتیجه ویزیت با موفقیت ثبت شد.")
+                    st.success(t("نتیجه ویزیت با موفقیت ثبت شد.", "Visit result was submitted successfully."))
                     st.cache_data.clear()
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"خطا در ثبت نتیجه: {exc}")
+                    st.error(t(f"خطا در ثبت نتیجه: {exc}", f"Error submitting visit result: {exc}"))

@@ -12,6 +12,7 @@ import streamlit as st
 
 from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
+from client.i18n import align, direction, t
 from client.components.rtl_table import render_rtl_table
 from client.components.route_map import render_route_map
 from client.styles.neumorphism import (
@@ -43,32 +44,32 @@ def _save_uploaded_excel(uploaded_file) -> str | None:
         return tmp.name
 
 
-def _fallback_reason_fa(reason: str | None) -> str:
+def _fallback_reason_text(reason: str | None) -> str:
     if reason == "vroom_timeout":
-        return "پاسخ VROOM در زمان مقرر دریافت نشد."
+        return t("پاسخ VROOM در زمان مقرر دریافت نشد.", "VROOM response timed out.")
     if reason == "vroom_invalid_response":
-        return "پاسخ VROOM معتبر نبود."
+        return t("پاسخ VROOM معتبر نبود.", "VROOM response was invalid.")
     if reason == "vroom_unavailable":
-        return "سرویس VROOM محلی در دسترس نبود."
+        return t("سرویس VROOM محلی در دسترس نبود.", "Local VROOM service was unavailable.")
     if reason == "osrm_timeout":
-        return "پاسخ OSRM در زمان مقرر دریافت نشد."
+        return t("پاسخ OSRM در زمان مقرر دریافت نشد.", "OSRM response timed out.")
     if reason == "osrm_invalid_response":
-        return "پاسخ OSRM معتبر نبود."
+        return t("پاسخ OSRM معتبر نبود.", "OSRM response was invalid.")
     if reason == "osrm_unavailable":
-        return "سرویس OSRM محلی در دسترس نبود."
-    return "دلیل دقیق fallback مشخص نیست."
+        return t("سرویس OSRM محلی در دسترس نبود.", "Local OSRM service was unavailable.")
+    return t("دلیل دقیق fallback مشخص نیست.", "Exact fallback reason is unknown.")
 
 
 def _runtime_health_caption(runtime_state: dict[str, object]) -> str:
-    osrm_text = "فعال" if bool(runtime_state.get("osrm_up", False)) else "غیرفعال"
-    tiles_text = "فعال" if bool(runtime_state.get("tiles_up", False)) else "غیرفعال"
+    osrm_text = t("فعال", "UP") if bool(runtime_state.get("osrm_up", False)) else t("غیرفعال", "DOWN")
+    tiles_text = t("فعال", "UP") if bool(runtime_state.get("tiles_up", False)) else t("غیرفعال", "DOWN")
     osrm_latency = runtime_state.get("osrm_latency_ms")
     tiles_latency = runtime_state.get("tiles_latency_ms")
     osrm_latency_text = f"{osrm_latency}ms" if osrm_latency is not None else "—"
     tiles_latency_text = f"{tiles_latency}ms" if tiles_latency is not None else "—"
-    return (
-        f"پیش‌بررسی سرویس‌ها: OSRM={osrm_text} ({osrm_latency_text}) | "
-        f"Tile={tiles_text} ({tiles_latency_text})"
+    return t(
+        f"پیش‌بررسی سرویس‌ها: OSRM={osrm_text} ({osrm_latency_text}) | Tile={tiles_text} ({tiles_latency_text})",
+        f"Service precheck: OSRM={osrm_text} ({osrm_latency_text}) | Tile={tiles_text} ({tiles_latency_text})",
     )
 
 
@@ -120,13 +121,13 @@ def _run_apply_files_and_build_route(
 ) -> dict:
     # FIX: [UX-06] Expose granular pipeline progress with checklist + progress bar.
     if daily_file is None:
-        raise ValueError("برای ساخت مسیر، بارگذاری فایل وضعیت روزانه الزامی است.")
+        raise ValueError(t("برای ساخت مسیر، بارگذاری فایل وضعیت روزانه الزامی است.", "Daily status file upload is required to build routes."))
 
     stores_path = _save_uploaded_excel(stores_file)
     daily_path = _save_uploaded_excel(daily_file)
 
     try:
-        with st.status("در حال اجرای پایپلاین ساخت مسیر...", expanded=True) as status:
+        with st.status(t("در حال اجرای پایپلاین ساخت مسیر...", "Running route build pipeline..."), expanded=True) as status:
             checklist_box = st.empty()
             progress_box = st.empty()
             progress_note_box = st.empty()
@@ -135,14 +136,14 @@ def _run_apply_files_and_build_route(
             assigned_count = 0
             unassigned_count = 0
             progress_reason = (
-                "این نوار پیشرفت مربوط به فرآیند تولید تخصیص و ساخت مسیر است."
+                t("این نوار پیشرفت مربوط به فرآیند تولید تخصیص و ساخت مسیر است.", "This progress bar tracks assignment generation and route building.")
             )
             step_order = [
-                ("stores", "بارگذاری فایل فروشگاه‌ها"),
-                ("daily", "ثبت وضعیت روزانه ویزیتورها"),
-                ("assign", "تولید تخصیص‌ها"),
-                ("route", "مرتب‌سازی مسیرها"),
-                ("quality", "ارزیابی کیفیت مسیر"),
+                ("stores", t("بارگذاری فایل فروشگاه‌ها", "Upload store file")),
+                ("daily", t("ثبت وضعیت روزانه ویزیتورها", "Register daily visitor status")),
+                ("assign", t("تولید تخصیص‌ها", "Generate assignments")),
+                ("route", t("مرتب‌سازی مسیرها", "Route ordering")),
+                ("quality", t("ارزیابی کیفیت مسیر", "Route quality evaluation")),
             ]
             step_state = {step_id: "pending" for step_id, _ in step_order}
             step_text = {step_id: label for step_id, label in step_order}
@@ -152,7 +153,7 @@ def _run_apply_files_and_build_route(
                 progress_box.markdown(
                     f"""
                     <div class="pipeline-progress-wrap">
-                        <div class="pipeline-progress-label">درصد پیشرفت ساخت مسیر و تخصیص: {pct}٪</div>
+                        <div class="pipeline-progress-label">{t("درصد پیشرفت ساخت مسیر و تخصیص", "Assignment & route progress")}: {pct}%</div>
                         <div class="pipeline-progress-track">
                             <div class="pipeline-progress-fill" style="width:{pct}%;"></div>
                         </div>
@@ -163,26 +164,30 @@ def _run_apply_files_and_build_route(
                 progress_note_box.markdown(
                     (
                         '<div class="pipeline-progress-note">'
-                        f"نکته: از {assigned_count + unassigned_count} فروشگاه قابل ویزیت، "
-                        f"{assigned_count} فروشگاه تخصیص یافته و {unassigned_count} فروشگاه تخصیص نیافته است."
-                        "<br/>"
-                        f"دلیل: {progress_reason}"
-                        "</div>"
+                        + t(
+                            f"نکته: از {assigned_count + unassigned_count} فروشگاه قابل ویزیت، "
+                            f"{assigned_count} فروشگاه تخصیص یافته و {unassigned_count} فروشگاه تخصیص نیافته است.",
+                            f"Note: out of {assigned_count + unassigned_count} due stores, "
+                            f"{assigned_count} were assigned and {unassigned_count} remained unassigned.",
+                        )
+                        + "<br/>"
+                        + t(f"دلیل: {progress_reason}", f"Reason: {progress_reason}")
+                        + "</div>"
                     ),
                     unsafe_allow_html=True,
                 )
 
             def _render_steps() -> None:
                 status_map = {
-                    "pending": "در انتظار",
-                    "running": '<span class="hourglass-spin">⏳</span> در حال اجرا',
-                    "done": "انجام شد",
-                    "warn": "پایان با هشدار",
+                    "pending": t("در انتظار", "Pending"),
+                    "running": t('<span class="hourglass-spin">⏳</span> در حال اجرا', '<span class="hourglass-spin">⏳</span> Running'),
+                    "done": t("انجام شد", "Done"),
+                    "warn": t("پایان با هشدار", "Completed with warning"),
                 }
                 lines: list[str] = []
                 for index, (step_id, _) in enumerate(step_order, start=1):
                     lines.append(
-                        f"{index}. {step_text[step_id]} — {status_map.get(step_state.get(step_id, 'pending'), 'در انتظار')}"
+                        f"{index}. {step_text[step_id]} — {status_map.get(step_state.get(step_id, 'pending'), t('در انتظار', 'Pending'))}"
                     )
                 checklist_box.markdown(
                     f'<div class="pipeline-checklist-right">{"<br/>".join(lines)}</div>',
@@ -216,7 +221,7 @@ def _run_apply_files_and_build_route(
                     _set_step(
                         "stores",
                         "done",
-                        f"فروشگاه‌ها بارگذاری شدند ({stores_processed} ردیف)",
+                        t(f"فروشگاه‌ها بارگذاری شدند ({stores_processed} ردیف)", f"Store file imported ({stores_processed} rows)"),
                         mark_complete=True,
                     )
                 else:
@@ -224,7 +229,7 @@ def _run_apply_files_and_build_route(
                     _set_step(
                         "stores",
                         "done",
-                        "فایل فروشگاه جدیدی بارگذاری نشد.",
+                        t("فایل فروشگاه جدیدی بارگذاری نشد.", "No new store file was uploaded."),
                         mark_complete=True,
                     )
 
@@ -234,7 +239,7 @@ def _run_apply_files_and_build_route(
                 _set_step(
                     "daily",
                     "done",
-                    f"وضعیت روزانه ویزیتورها ثبت شد ({daily_processed} نفر)",
+                    t(f"وضعیت روزانه ویزیتورها ثبت شد ({daily_processed} نفر)", f"Daily visitor status imported ({daily_processed} users)"),
                     mark_complete=True,
                 )
 
@@ -246,10 +251,13 @@ def _run_apply_files_and_build_route(
                 )
                 if status_count_for_selected_date <= 0:
                     raise ValueError(
-                        "فایل وضعیت روزانه برای تاریخ انتخاب‌شده ردیفی ندارد. تاریخ کاری را با work_date فایل یکسان کنید."
+                        t(
+                            "فایل وضعیت روزانه برای تاریخ انتخاب‌شده ردیفی ندارد. تاریخ کاری را با work_date فایل یکسان کنید.",
+                            "The daily status file has no rows for the selected date. Match the work date with the file's work_date.",
+                        )
                     )
 
-                _set_step("assign", "running", "در حال تولید تخصیص‌ها...")
+                _set_step("assign", "running", t("در حال تولید تخصیص‌ها...", "Generating assignments..."))
                 draft_summary = assignment_service.generate_draft_assignments(
                     db=db,
                     work_date=work_date,
@@ -259,19 +267,25 @@ def _run_apply_files_and_build_route(
                 _set_step(
                     "assign",
                     "done",
-                    (
+                    t(
                         f"{draft_summary.get('created_assignments', 0)} تخصیص ساخته شد | "
-                        f"{draft_summary.get('unassigned_due_stores', 0)} فروشگاه تخصیص نیافت"
+                        f"{draft_summary.get('unassigned_due_stores', 0)} فروشگاه تخصیص نیافت",
+                        f"{draft_summary.get('created_assignments', 0)} assignments created | "
+                        f"{draft_summary.get('unassigned_due_stores', 0)} stores unassigned",
                     ),
                     mark_complete=True,
                 )
                 assigned_count = int(draft_summary.get("created_assignments", 0))
                 unassigned_count = int(draft_summary.get("unassigned_due_stores", 0))
                 if unassigned_count > 0:
-                    progress_reason = "مجموع ظرفیت روزانه ویزیتورهای فعال کمتر از تعداد فروشگاه‌های قابل ویزیت بوده است."
+                    progress_reason = t(
+                        "مجموع ظرفیت روزانه ویزیتورهای فعال کمتر از تعداد فروشگاه‌های قابل ویزیت بوده است.",
+                        "Total daily capacity of active visitors is lower than the number of due stores.",
+                    )
                 else:
-                    progress_reason = (
-                        "همه فروشگاه‌های قابل ویزیت در ظرفیت روزانه پوشش داده شدند."
+                    progress_reason = t(
+                        "همه فروشگاه‌های قابل ویزیت در ظرفیت روزانه پوشش داده شدند.",
+                        "All due stores were covered within daily visitor capacity.",
                     )
                 _render_progress()
 
@@ -280,16 +294,22 @@ def _run_apply_files_and_build_route(
                     force_refresh=True
                 )
                 st.markdown(
-                    f'<div class="panel-description" style="text-align:right !important;margin:.25rem 0;">{_runtime_health_caption(runtime_state)}</div>',
+                    f'<div class="panel-description" style="text-align:{align()} !important;margin:.25rem 0;">{_runtime_health_caption(runtime_state)}</div>',
                     unsafe_allow_html=True,
                 )
                 if not bool(runtime_state.get("osrm_data_ready", False)):
                     st.warning(
-                        "فایل داده OSRM پیدا نشد. مسیر مورد انتظار: offline/osrm/data/tehran-latest.osrm"
+                        t(
+                            "فایل داده OSRM پیدا نشد. مسیر مورد انتظار: offline/osrm/data/tehran-latest.osrm",
+                            "OSRM data file not found. Expected path: offline/osrm/data/tehran-latest.osrm",
+                        )
                     )
                 if not bool(runtime_state.get("tiles_data_ready", False)):
                     st.info(
-                        "فایل MBTiles پیدا نشد. مسیر مورد انتظار: offline/tiles/data/*.mbtiles"
+                        t(
+                            "فایل MBTiles پیدا نشد. مسیر مورد انتظار: offline/tiles/data/*.mbtiles",
+                            "MBTiles file not found. Expected path: offline/tiles/data/*.mbtiles",
+                        )
                     )
                 route_summary: dict
                 routes_precomputed = bool(draft_summary.get("routes_precomputed"))
@@ -321,7 +341,7 @@ def _run_apply_files_and_build_route(
                     _set_step(
                         "route",
                         "done",
-                        "مسیرها با VROOM+OSRM آفلاین ساخته شدند.",
+                        t("مسیرها با VROOM+OSRM آفلاین ساخته شدند.", "Routes were built by offline VROOM+OSRM."),
                         mark_complete=True,
                     )
                 else:
@@ -331,14 +351,17 @@ def _run_apply_files_and_build_route(
                             runtime_status=runtime_state,
                         )
                         _set_step(
-                            "route", "running", "در حال مرتب‌سازی مسیرها با OSRM محلی..."
+                            "route", "running", t("در حال مرتب‌سازی مسیرها با OSRM محلی...", "Ordering routes with local OSRM...")
                         )
                     else:
                         route_planner = routing_service.NearestNeighborRoutePlanner()
                         _set_step(
                             "route",
                             "running",
-                            "OSRM محلی در دسترس نیست؛ مرتب‌سازی با الگوریتم پشتیبان انجام می‌شود...",
+                            t(
+                                "OSRM محلی در دسترس نیست؛ مرتب‌سازی با الگوریتم پشتیبان انجام می‌شود...",
+                                "Local OSRM is unavailable; route ordering will use fallback algorithm...",
+                            ),
                         )
 
                     route_summary = routing_service.apply_routes_for_work_date(
@@ -364,7 +387,7 @@ def _run_apply_files_and_build_route(
                         _set_step(
                             "route",
                             "done",
-                            "مسیرها با OSRM بهینه شدند.",
+                            t("مسیرها با OSRM بهینه شدند.", "Routes were optimized with OSRM."),
                             mark_complete=True,
                         )
                     else:
@@ -375,7 +398,10 @@ def _run_apply_files_and_build_route(
                         _set_step(
                             "route",
                             "warn",
-                            f"از الگوریتم پشتیبان استفاده شد. ({_fallback_reason_fa(fallback_reason)})",
+                            t(
+                                f"از الگوریتم پشتیبان استفاده شد. ({_fallback_reason_text(fallback_reason)})",
+                                f"Fallback algorithm used. ({_fallback_reason_text(fallback_reason)})",
+                            ),
                             mark_complete=True,
                         )
 
@@ -386,10 +412,13 @@ def _run_apply_files_and_build_route(
                 _set_step(
                     "quality",
                     "done",
-                    f"کیفیت مسیر: بهبود {quality['improvement_pct']}٪ نسبت به تخصیص مبنا",
+                    t(
+                        f"کیفیت مسیر: بهبود {quality['improvement_pct']}٪ نسبت به تخصیص مبنا",
+                        f"Route quality: {quality['improvement_pct']}% improvement vs baseline assignment",
+                    ),
                     mark_complete=True,
                 )
-                status.update(label="پایپلاین با موفقیت انجام شد.", state="complete")
+                status.update(label=t("پایپلاین با موفقیت انجام شد.", "Pipeline completed successfully."), state="complete")
 
             return {
                 "stores_processed": stores_processed,
@@ -444,11 +473,18 @@ def _render_pipeline_result(result: dict) -> None:
     )
 
     st.success(
-        "فایل‌ها اعمال شد و مسیرها ساخته شدند. "
-        f"فروشگاه پردازش‌شده: {result['stores_processed']} | "
-        f"وضعیت روزانه پردازش‌شده: {result['daily_processed']} | "
-        f"تخصیص ساخته‌شده: {draft_summary.get('created_assignments', 0)} | "
-        f"مرتب‌سازی مسیر: {route_summary.get('total_assignments', 0)}"
+        t(
+            "فایل‌ها اعمال شد و مسیرها ساخته شدند. "
+            f"فروشگاه پردازش‌شده: {result['stores_processed']} | "
+            f"وضعیت روزانه پردازش‌شده: {result['daily_processed']} | "
+            f"تخصیص ساخته‌شده: {draft_summary.get('created_assignments', 0)} | "
+            f"مرتب‌سازی مسیر: {route_summary.get('total_assignments', 0)}",
+            "Files were applied and routes were built. "
+            f"Stores processed: {result['stores_processed']} | "
+            f"Daily status processed: {result['daily_processed']} | "
+            f"Assignments created: {draft_summary.get('created_assignments', 0)} | "
+            f"Routes ordered: {route_summary.get('total_assignments', 0)}",
+        )
     )
 
     comparable = not (
@@ -457,31 +493,34 @@ def _render_pipeline_result(result: dict) -> None:
         and solver_mode != "vroom"
     )
     gate_text = (
-        "قابل مقایسه نیست"
+        t("قابل مقایسه نیست", "Not comparable")
         if not comparable
-        else ("قبول" if quality["passes_gate"] else "رد")
+        else (t("قبول", "Pass") if quality["passes_gate"] else t("رد", "Fail"))
     )
 
     render_metric_grid(
         [
-            ("مسافت مسیر مبنا (قبل از بهینه‌سازی) (km)", quality["baseline_km"]),
-            ("مسافت مسیر فعلی (بعد از بهینه‌سازی) (km)", quality["current_km"]),
-            ("درصد بهبود مسیر", f"{quality['improvement_pct']}%"),
-            ("وضعیت", gate_text),
+            (t("مسافت مسیر مبنا (قبل از بهینه‌سازی) (km)", "Baseline Route Distance (Before Optimization) (km)"), quality["baseline_km"]),
+            (t("مسافت مسیر فعلی (بعد از بهینه‌سازی) (km)", "Current Route Distance (After Optimization) (km)"), quality["current_km"]),
+            (t("درصد بهبود مسیر", "Route Improvement (%)"), f"{quality['improvement_pct']}%"),
+            (t("وضعیت", "Status"), gate_text),
         ]
     )
     if solver_mode == "vroom":
-        route_mode_text = (
-            f"مسیر {route_summary.get('vroom_routed', 0)} ویزیتور با VROOM+OSRM آفلاین"
+        route_mode_text = t(
+            f"مسیر {route_summary.get('vroom_routed', 0)} ویزیتور با VROOM+OSRM آفلاین",
+            f"Routed {route_summary.get('vroom_routed', 0)} visitors with offline VROOM+OSRM",
         )
     else:
-        route_mode_text = (
+        route_mode_text = t(
             f"مسیر {route_summary.get('osrm_routed', 0)} ویزیتور با OSRM | "
-            f"{route_summary.get('nn_routed', 0)} ویزیتور با الگوریتم پشتیبان"
+            f"{route_summary.get('nn_routed', 0)} ویزیتور با الگوریتم پشتیبان",
+            f"Routed {route_summary.get('osrm_routed', 0)} visitors with OSRM | "
+            f"{route_summary.get('nn_routed', 0)} visitors with fallback algorithm",
         )
     st.markdown(
         (
-            '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.1rem;">'
+            f'<div style="direction:{direction()};text-align:{align()};color:#6B7280;font-size:.85rem;margin-top:.1rem;">'
             f"{route_mode_text}"
             "</div>"
         ),
@@ -490,9 +529,9 @@ def _render_pipeline_result(result: dict) -> None:
     if fallback_stage == "vroom_to_legacy":
         st.markdown(
             (
-                '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.05rem;">'
-                "fallback مرحله اول: "
-                f"VROOM به Legacy ({_fallback_reason_fa(solver_reason)})"
+                f'<div style="direction:{direction()};text-align:{align()};color:#6B7280;font-size:.85rem;margin-top:.05rem;">'
+                + t("fallback مرحله اول: ", "First-stage fallback: ")
+                + f"VROOM -> Legacy ({_fallback_reason_text(solver_reason)})"
                 "</div>"
             ),
             unsafe_allow_html=True,
@@ -500,9 +539,9 @@ def _render_pipeline_result(result: dict) -> None:
     if int(route_summary.get("nn_routed", 0)) > 0:
         st.markdown(
             (
-                '<div style="direction:rtl;text-align:right;color:#6B7280;font-size:.85rem;margin-top:.05rem;">'
-                "دلیل fallback: "
-                f"{_fallback_reason_fa(route_summary.get('fallback_reason'))}"
+                f'<div style="direction:{direction()};text-align:{align()};color:#6B7280;font-size:.85rem;margin-top:.05rem;">'
+                + t("دلیل fallback: ", "Fallback reason: ")
+                + f"{_fallback_reason_text(route_summary.get('fallback_reason'))}"
                 "</div>"
             ),
             unsafe_allow_html=True,
@@ -513,26 +552,37 @@ def _render_pipeline_result(result: dict) -> None:
         and solver_mode != "vroom"
     ):
         runtime_state = result.get("runtime_status") or {}
-        reason_text = _fallback_reason_fa(route_summary.get("fallback_reason"))
+        reason_text = _fallback_reason_text(route_summary.get("fallback_reason"))
         if bool(runtime_state.get("osrm_up", False)):
             st.warning(
-                f"OSRM پاسخ قابل استفاده نداد و مسیرها با الگوریتم پشتیبان ساخته شدند. {reason_text}"
+                t(
+                    f"OSRM پاسخ قابل استفاده نداد و مسیرها با الگوریتم پشتیبان ساخته شدند. {reason_text}",
+                    f"OSRM did not return usable responses, so routes were built with fallback algorithm. {reason_text}",
+                )
             )
         else:
             st.warning(
-                f"OSRM محلی در دسترس نبوده و مسیرها با الگوریتم پشتیبان ساخته شده‌اند. {reason_text}"
+                t(
+                    f"OSRM محلی در دسترس نبوده و مسیرها با الگوریتم پشتیبان ساخته شده‌اند. {reason_text}",
+                    f"Local OSRM was unavailable, so routes were built with fallback algorithm. {reason_text}",
+                )
             )
     if fallback_stage == "vroom_to_legacy":
         st.info(
-            "حل‌گر VROOM در دسترس نبود و سیستم به‌صورت خودکار از پایپلاین Legacy استفاده کرده است. "
-            f"{_fallback_reason_fa(solver_reason)}"
+            t(
+                "حل‌گر VROOM در دسترس نبود و سیستم به‌صورت خودکار از پایپلاین Legacy استفاده کرده است. "
+                f"{_fallback_reason_text(solver_reason)}",
+                "VROOM solver was unavailable and the system automatically switched to the Legacy pipeline. "
+                f"{_fallback_reason_text(solver_reason)}",
+            )
         )
     shadow = result.get("shadow")
     if isinstance(shadow, dict) and bool(shadow.get("enabled")):
-        shadow_status = "موفق" if str(shadow.get("status")) == "ok" else "ناموفق"
-        shadow_reason = _fallback_reason_fa(shadow.get("solver_reason"))
+        shadow_status = t("موفق", "Success") if str(shadow.get("status")) == "ok" else t("ناموفق", "Failed")
+        shadow_reason = _fallback_reason_text(shadow.get("solver_reason"))
         st.caption(
-            "خروجی Shadow VROOM: "
+            t("خروجی Shadow VROOM: ", "Shadow VROOM Output: ")
+            + 
             f"{shadow_status} | "
             f"assigned={shadow.get('assigned_count', 0)} | "
             f"unassigned={shadow.get('unassigned_count', 0)} | "
@@ -540,15 +590,18 @@ def _render_pipeline_result(result: dict) -> None:
         )
     if comparable and not quality["passes_gate"]:
         st.warning(
-            "وضعیت ارزیابی رد شد. بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد."
+            t(
+                "وضعیت ارزیابی رد شد. بهبود مسیر باید حداقل ۲۰٪ نسبت به مقدار مبنا باشد.",
+                "Quality gate failed. Route improvement must be at least 20% over baseline.",
+            )
         )
 
 
 def render_manager_dashboard(current_user: dict) -> None:
-    render_page_title("داشبورد مدیر")
+    render_page_title(t("داشبورد مدیر", "Manager Dashboard"))
 
     work_date = jalali_date_input(
-        label="📅 تاریخ کاری",
+        label=t("📅 تاریخ کاری", "📅 Work Date"),
         key_prefix="manager_work_date",
         default_gregorian=date.today(),
     )
@@ -574,34 +627,50 @@ def render_manager_dashboard(current_user: dict) -> None:
 
     if is_hard_locked or is_soft_locked:
         st.warning(
-            "این تاریخ قفل است: "
-            f"{visit_count} ویزیت ثبت‌شده | "
-            f"{followup_count} پیگیری فعال | "
-            f"{published_count} تخصیص منتشرشده"
+            t(
+                "این تاریخ قفل است: "
+                f"{visit_count} ویزیت ثبت‌شده | "
+                f"{followup_count} پیگیری فعال | "
+                f"{published_count} تخصیص منتشرشده",
+                "This date is locked: "
+                f"{visit_count} recorded visits | "
+                f"{followup_count} active follow-ups | "
+                f"{published_count} published assignments",
+            )
         )
     if is_soft_locked:
         st.info(
-            "برای این تاریخ هنوز ویزیت/پیگیری ثبت نشده است. می‌توانید پاک‌سازی کامل انجام دهید و دوباره فایل آپلود کنید."
+            t(
+                "برای این تاریخ هنوز ویزیت/پیگیری ثبت نشده است. می‌توانید پاک‌سازی کامل انجام دهید و دوباره فایل آپلود کنید.",
+                "No visits/follow-ups are recorded yet for this date. You can flush this date and upload files again.",
+            )
         )
     if (not is_hard_locked) and draft_count <= 0:
         st.info(
-            "برای این تاریخ پیش‌نویسی برای انتشار وجود ندارد. اگر قبلاً منتشر شده، برای ساخت مسیر جدید ابتدا پاک‌سازی کامل همان تاریخ را انجام دهید."
+            t(
+                "برای این تاریخ پیش‌نویسی برای انتشار وجود ندارد. اگر قبلاً منتشر شده، برای ساخت مسیر جدید ابتدا پاک‌سازی کامل همان تاریخ را انجام دهید.",
+                "No draft exists for publishing on this date. If it was previously published, flush this date before rebuilding routes.",
+            )
         )
 
-    with st.expander("اعمال فایل‌ها و ساخت مسیر", expanded=not is_hard_locked):
+    with st.expander(t("اعمال فایل‌ها و ساخت مسیر", "Apply Files & Build Routes"), expanded=not is_hard_locked):
         st.markdown(
-            """
+            f"""
             <div class="panel-description">
-                با آپلود فایل فروشگاه‌ها، اطلاعات فروشگاه‌ها به‌روزرسانی می‌شود.<br/>
-                با آپلود فایل وضعیت روزانه ویزیتورها، ظرفیت و نقطه شروع هر ویزیتور ثبت می‌شود و مسیرها برای همان تاریخ دوباره طراحی می‌شوند.
+                {t(
+                    "با آپلود فایل فروشگاه‌ها، اطلاعات فروشگاه‌ها به‌روزرسانی می‌شود.<br/>"
+                    "با آپلود فایل وضعیت روزانه ویزیتورها، ظرفیت و نقطه شروع هر ویزیتور ثبت می‌شود و مسیرها برای همان تاریخ دوباره طراحی می‌شوند.",
+                    "Uploading the store file updates store data.<br/>"
+                    "Uploading daily visitor status registers each visitor capacity/start point and rebuilds routes for the selected date."
+                )}
             </div>
             """,
             unsafe_allow_html=True,
         )
         st.markdown(
-            """
+            f"""
             <div class="panel-description-columns">
-                ستون‌های الزامی فایل وضعیت روزانه:
+                {t("ستون‌های الزامی فایل وضعیت روزانه:", "Required columns in daily status file:")}
                 <span class="ltr-inline">work_date, username, visitor_code, full_name, start_lat, start_lon, capacity, is_active_today</span>
             </div>
             """,
@@ -611,28 +680,31 @@ def render_manager_dashboard(current_user: dict) -> None:
         c1, c2 = st.columns(2)
         with c1:
             stores_file = st.file_uploader(
-                "فایل فروشگاه‌ها (اختیاری)",
+                t("فایل فروشگاه‌ها (اختیاری)", "Store File (Optional)"),
                 type=["xlsx"],
                 key=f"stores_apply_{work_date_iso}",
                 disabled=is_hard_locked,
             )
         with c2:
             daily_file = st.file_uploader(
-                "فایل وضعیت روزانه ویزیتورها (اجباری)",
+                t("فایل وضعیت روزانه ویزیتورها (اجباری)", "Daily Visitor Status File (Required)"),
                 type=["xlsx"],
                 key=f"daily_apply_{work_date_iso}",
                 disabled=is_hard_locked,
             )
 
         if st.button(
-            "اعمال فایل‌ها و ساخت مسیر",
+            t("اعمال فایل‌ها و ساخت مسیر", "Apply Files & Build Routes"),
             key=f"build_pipeline_{work_date_iso}",
             use_container_width=True,
             disabled=is_hard_locked,
         ):
             if is_soft_locked:
                 st.error(
-                    "برای این تاریخ تخصیص منتشرشده وجود دارد. ابتدا «پاک‌سازی کامل همین تاریخ» را انجام دهید، سپس مسیر جدید بسازید."
+                    t(
+                        "برای این تاریخ تخصیص منتشرشده وجود دارد. ابتدا «پاک‌سازی کامل همین تاریخ» را انجام دهید، سپس مسیر جدید بسازید.",
+                        "Published assignments already exist for this date. First run 'Flush This Date', then rebuild routes.",
+                    )
                 )
                 st.stop()
             try:
@@ -647,36 +719,43 @@ def render_manager_dashboard(current_user: dict) -> None:
                 st.cache_data.clear()
                 st.rerun()
             except Exception as exc:
-                st.error(f"خطا در ساخت مسیر: {exc}")
+                st.error(t(f"خطا در ساخت مسیر: {exc}", f"Error while building routes: {exc}"))
 
         last_result = st.session_state.get("manager_last_pipeline_result")
         if isinstance(last_result, dict):
             _render_pipeline_result(last_result)
 
-    with st.expander("پاک‌سازی کامل داده‌های همین تاریخ", expanded=False):
+    with st.expander(t("پاک‌سازی کامل داده‌های همین تاریخ", "Flush All Data For This Date"), expanded=False):
         has_operational_data = visit_count > 0 or followup_count > 0
         has_any_daily_data = assignment_count > 0 or has_operational_data
         st.markdown(
-            """
+            f"""
             <div class="panel-description">
-                این عملیات همه داده‌های تخصیص، ویزیت و پیگیری فروش تلفنی مربوط به همین تاریخ را حذف می‌کند
-                و باعث از دست رفتن سوابق عملیاتی همان روز می‌شود.
+                {t(
+                    "این عملیات همه داده‌های تخصیص، ویزیت و پیگیری فروش تلفنی مربوط به همین تاریخ را حذف می‌کند "
+                    "و باعث از دست رفتن سوابق عملیاتی همان روز می‌شود.",
+                    "This operation deletes all assignments, visits, and telesales follow-ups for this date "
+                    "and will remove that day's operational history."
+                )}
             </div>
             """,
             unsafe_allow_html=True,
         )
         if not has_any_daily_data:
-            st.info("برای این تاریخ داده عملیاتی یا تخصیصی ثبت نشده است.")
+            st.info(t("برای این تاریخ داده عملیاتی یا تخصیصی ثبت نشده است.", "No assignment or operational data exists for this date."))
         elif not has_operational_data and has_any_daily_data:
             st.info(
-                "برای این تاریخ هنوز ویزیت یا پیگیری عملیاتی ثبت نشده است؛ پاک‌سازی کامل بدون از دست‌رفتن سابقه ویزیت انجام می‌شود."
+                t(
+                    "برای این تاریخ هنوز ویزیت یا پیگیری عملیاتی ثبت نشده است؛ پاک‌سازی کامل بدون از دست‌رفتن سابقه ویزیت انجام می‌شود.",
+                    "No operational visits/follow-ups are recorded yet for this date; full flush can run without losing visit history.",
+                )
             )
         confirm_flush = st.checkbox(
-            "تأیید می‌کنم پاکسازی کامل فقط برای همین تاریخ انجام شود.",
+            t("تأیید می‌کنم پاکسازی کامل فقط برای همین تاریخ انجام شود.", "I confirm full flush must run only for this date."),
             key=f"confirm_flush_{work_date_iso}",
         )
         if st.button(
-            "پاک‌سازی کامل همین تاریخ",
+            t("پاک‌سازی کامل همین تاریخ", "Flush This Date"),
             key=f"flush_{work_date_iso}",
             use_container_width=True,
             disabled=(not confirm_flush) or (not has_any_daily_data),
@@ -689,7 +768,8 @@ def render_manager_dashboard(current_user: dict) -> None:
                         manager_user_id=current_user["id"],
                     )
                 st.success(
-                    "پاک‌سازی انجام شد: "
+                    t("پاک‌سازی انجام شد: ", "Flush completed: ")
+                    + 
                     f"assignments={result['assignments_deleted']} | "
                     f"visits={result['visits_deleted']} | "
                     f"followups={result['followups_deleted']}"
@@ -699,14 +779,14 @@ def render_manager_dashboard(current_user: dict) -> None:
                 st.cache_data.clear()
                 st.rerun()
             except Exception as exc:
-                st.error(f"خطا در پاک‌سازی: {exc}")
+                st.error(t(f"خطا در پاک‌سازی: {exc}", f"Flush error: {exc}"))
 
-    neu_section_header("عملیات مدیریتی")
+    neu_section_header(t("عملیات مدیریتی", "Manager Operations"))
     op1, op2 = st.columns(2)
 
     with op1:
         if st.button(
-            "📤 انتشار مسیرها",
+            t("📤 انتشار مسیرها", "📤 Publish Routes"),
             key=f"publish_{work_date_iso}",
             use_container_width=True,
             disabled=is_hard_locked or (draft_count <= 0),
@@ -719,15 +799,15 @@ def render_manager_dashboard(current_user: dict) -> None:
                         manager_user_id=current_user["id"],
                         include_draft_override=True,
                     )
-                st.success(f"{count} تخصیص منتشر شد.")
+                st.success(t(f"{count} تخصیص منتشر شد.", f"{count} assignments were published."))
                 st.cache_data.clear()
                 st.rerun()
             except Exception as exc:
-                st.error(f"خطا در انتشار مسیرها: {exc}")
+                st.error(t(f"خطا در انتشار مسیرها: {exc}", f"Publish error: {exc}"))
 
     with op2:
         if st.button(
-            "🔒 نهایی‌سازی موارد ثبت‌نشده",
+            t("🔒 نهایی‌سازی موارد ثبت‌نشده", "🔒 Finalize Unsubmitted Items"),
             key=f"finalize_{work_date_iso}",
             use_container_width=True,
             disabled=is_hard_locked,
@@ -739,27 +819,27 @@ def render_manager_dashboard(current_user: dict) -> None:
                         work_date=work_date,
                         actor_user_id=current_user["id"],
                     )
-                st.success(f"{count} تخصیص ثبت‌نشده به‌صورت خودکار قرمز شد.")
+                st.success(t(f"{count} تخصیص ثبت‌نشده به‌صورت خودکار قرمز شد.", f"{count} unsubmitted assignments were auto-finalized as red."))
                 st.cache_data.clear()
                 st.rerun()
             except Exception as exc:
-                st.error(f"خطا در نهایی‌سازی: {exc}")
+                st.error(t(f"خطا در نهایی‌سازی: {exc}", f"Finalize error: {exc}"))
 
-    neu_section_header("شاخص‌های روزانه")
+    neu_section_header(t("شاخص‌های روزانه", "Daily KPIs"))
     render_metric_grid(
         [
-            ("صف تامین‌پذیر", kpis["due_stores"]),
-            ("سبز / زرد / قرمز", f"{kpis['green']} / {kpis['yellow']} / {kpis['red']}"),
-            ("ویزیت تکمیل‌شده", kpis["completed_visits"]),
-            ("تخصیص‌شده", kpis["assigned_stores"]),
-            ("در انتظار تماس تلفنی", kpis["telesales_queue_size"]),
+            (t("صف تامین‌پذیر", "Due Stores"), kpis["due_stores"]),
+            (t("سبز / زرد / قرمز", "Green / Yellow / Red"), f"{kpis['green']} / {kpis['yellow']} / {kpis['red']}"),
+            (t("ویزیت تکمیل‌شده", "Completed Visits"), kpis["completed_visits"]),
+            (t("تخصیص‌شده", "Assigned"), kpis["assigned_stores"]),
+            (t("در انتظار تماس تلفنی", "Pending Telesales"), kpis["telesales_queue_size"]),
         ]
     )
     if int(kpis.get("due_stores", 0)) == 0:
         st.info(get_empty_state_message(role="manager", context="no_due_stores"))
 
     st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
-    neu_section_header("جدول تخصیص‌ها")
+    neu_section_header(t("جدول تخصیص‌ها", "Assignments Table"))
     assignment_df = _cached_assignments(work_date_iso)
     if assignment_df.empty:
         st.info(get_empty_state_message(role="manager", context="no_assignments"))
@@ -769,7 +849,7 @@ def render_manager_dashboard(current_user: dict) -> None:
         if "store_grade" in assignment_view_df.columns:
             assignment_view_df["store_grade"] = assignment_view_df[
                 "store_grade"
-            ].fillna("نامشخص")
+            ].fillna(t("نامشخص", "Unknown"))
         if "assignment_id" in assignment_view_df.columns:
             assignment_view_df["assignment_id"] = range(1, len(assignment_view_df) + 1)
         render_rtl_table(
@@ -777,7 +857,7 @@ def render_manager_dashboard(current_user: dict) -> None:
             key_prefix=f"manager_assignments_{work_date_iso}",
         )
 
-    neu_section_header("صف در انتظار تماس تلفنی")
+    neu_section_header(t("صف در انتظار تماس تلفنی", "Pending Telesales Queue"))
     if pending_queue:
         pending_df = pd.DataFrame(pending_queue)
         pending_df = pending_df.drop(
@@ -791,29 +871,35 @@ def render_manager_dashboard(current_user: dict) -> None:
         st.info(get_empty_state_message(role="manager", context="no_pending_telesales"))
 
     visitor_options = _cached_visitor_options(work_date_iso)
-    neu_section_header("نقشه مسیر")
+    neu_section_header(t("نقشه مسیر", "Route Map"))
     runtime_state = runtime_health_service.get_offline_runtime_status()
     if (not bool(runtime_state.get("osrm_up", False))) or (
         not bool(runtime_state.get("tiles_up", False))
     ):
         st.info(
-            "حالت کاهشی فعال است: اگر OSRM یا Tile در دسترس نباشد، نقشه مینیمال سریع نمایش داده می‌شود."
+            t(
+                "حالت کاهشی فعال است: اگر OSRM یا Tile در دسترس نباشد، نقشه مینیمال سریع نمایش داده می‌شود.",
+                "Degraded mode is active: if OSRM or tile service is unavailable, a fast minimal map will be shown.",
+            )
         )
     if not bool(runtime_state.get("osrm_data_ready", False)):
-        st.warning("فایل داده OSRM پیدا نشد (offline/osrm/data/tehran-latest.osrm).")
+        st.warning(t("فایل داده OSRM پیدا نشد (offline/osrm/data/tehran-latest.osrm).", "OSRM data file not found (offline/osrm/data/tehran-latest.osrm)."))
     if not bool(runtime_state.get("tiles_data_ready", False)):
-        st.warning("فایل MBTiles پیدا نشد (offline/tiles/data/*.mbtiles).")
+        st.warning(t("فایل MBTiles پیدا نشد (offline/tiles/data/*.mbtiles).", "MBTiles file not found (offline/tiles/data/*.mbtiles)."))
     st.markdown(
-        '<div class="panel-description" style="text-align:right !important;margin:0.1rem 0 0.35rem;">'
-        "راهنما: در همین کادر انتخاب ویزیتور می‌توانید جست‌وجو کنید (نمونه: VIS-001 یا visitor1)."
-        "</div>",
+        f'<div class="panel-description" style="text-align:{align()} !important;margin:0.1rem 0 0.35rem;">'
+        + t(
+            "راهنما: در همین کادر انتخاب ویزیتور می‌توانید جست‌وجو کنید (نمونه: VIS-001 یا visitor1).",
+            "Tip: you can search in this visitor selector (example: VIS-001 or visitor1).",
+        )
+        + "</div>",
         unsafe_allow_html=True,
     )
     selected_code = st.selectbox(
-        "انتخاب ویزیتور برای نمایش نقشه و دانلود مسیر",
+        t("انتخاب ویزیتور برای نمایش نقشه و دانلود مسیر", "Select Visitor For Map & Route Download"),
         options=list(visitor_options.keys()),
         index=None,
-        placeholder="ویزیتور را انتخاب یا جست‌وجو کنید...",
+        placeholder=t("ویزیتور را انتخاب یا جست‌وجو کنید...", "Select or search a visitor..."),
         key=f"manager_map_visitor_{work_date_iso}",
     )
 
@@ -832,7 +918,7 @@ def render_manager_dashboard(current_user: dict) -> None:
                 show_runtime_messages=False,
             )
 
-    neu_section_header("خروجی‌ها")
+    neu_section_header(t("خروجی‌ها", "Exports"))
     ex1, ex2 = st.columns(2)
     with ex1:
         if selected_code:
@@ -843,7 +929,7 @@ def render_manager_dashboard(current_user: dict) -> None:
                     visitor_id=visitor_options[selected_code],
                 )
             st.download_button(
-                label=f"📥 دانلود مسیر {selected_code}",
+                label=t(f"📥 دانلود مسیر {selected_code}", f"📥 Download Route {selected_code}"),
                 data=route_buf.getvalue(),
                 file_name=f"route_{work_date_iso}_{selected_code}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -857,7 +943,7 @@ def render_manager_dashboard(current_user: dict) -> None:
                 work_date=work_date,
             )
         st.download_button(
-            label="📥 دانلود گزارش کامل روزانه",
+            label=t("📥 دانلود گزارش کامل روزانه", "📥 Download Full Daily Report"),
             data=summary_buf.getvalue(),
             file_name=f"summary_{work_date_iso}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

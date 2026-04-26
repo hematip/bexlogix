@@ -15,7 +15,9 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-_VISIT_RESULT_MAP = {
+from client.i18n import align, direction, is_fa, t
+
+_VISIT_RESULT_MAP_FA = {
     "green": "فروش انجام شده",
     "yellow": "ویزیت شد، فروش انجام نشد",
     "red": "ویزیت انجام نشد",
@@ -23,7 +25,15 @@ _VISIT_RESULT_MAP = {
     "": "ثبت نشده",
 }
 
-_ASSIGNMENT_STATUS_MAP = {
+_VISIT_RESULT_MAP_EN = {
+    "green": "Sale completed",
+    "yellow": "Visited, no sale",
+    "red": "Visit not completed",
+    "none": "Not set",
+    "": "Not set",
+}
+
+_ASSIGNMENT_STATUS_MAP_FA = {
     "draft": "پیش‌نویس",
     "supervisor_approved": "تأیید سرپرست",
     "published": "منتشرشده",
@@ -33,7 +43,17 @@ _ASSIGNMENT_STATUS_MAP = {
     "": "ثبت نشده",
 }
 
-_COLUMN_LABELS = {
+_ASSIGNMENT_STATUS_MAP_EN = {
+    "draft": "Draft",
+    "supervisor_approved": "Supervisor Approved",
+    "published": "Published",
+    "completed": "Completed",
+    "skipped": "Skipped",
+    "none": "Not set",
+    "": "Not set",
+}
+
+_COLUMN_LABELS_FA = {
     "assignment_id": "شناسه تخصیص",
     "work_date": "تاریخ کاری",
     "visitor_code": "کد ویزیتور",
@@ -59,9 +79,47 @@ _COLUMN_LABELS = {
     "result": "نتیجه",
 }
 
+_COLUMN_LABELS_EN = {
+    "assignment_id": "Assignment ID",
+    "work_date": "Work Date",
+    "visitor_code": "Visitor Code",
+    "store_code": "Store Code",
+    "store_name": "Store Name",
+    "store_grade": "Store Grade",
+    "route_order": "Route Order",
+    "route_distance_km": "Cumulative Route Distance (km)",
+    "assignment_status": "Assignment Status",
+    "visit_result": "Visit Result",
+    "followup_id": "Follow-up ID",
+    "followup_date": "Follow-up Date",
+    "store_id": "Store ID",
+    "store_region": "Region",
+    "store_address": "Address",
+    "store_lat": "Latitude",
+    "store_lon": "Longitude",
+    "visit_id": "Visit ID",
+    "visit_date": "Visit Date",
+    "visit_note": "Visit Note",
+    "unavailable_reason": "Visit Not Completed Reason",
+    "note": "Note",
+    "result": "Result",
+}
+
 _EN_TO_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 _ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
 _FONTS_DIR = _ASSETS_DIR / "fonts"
+
+
+def _visit_result_map() -> dict[str, str]:
+    return _VISIT_RESULT_MAP_FA if is_fa() else _VISIT_RESULT_MAP_EN
+
+
+def _assignment_status_map() -> dict[str, str]:
+    return _ASSIGNMENT_STATUS_MAP_FA if is_fa() else _ASSIGNMENT_STATUS_MAP_EN
+
+
+def _column_labels() -> dict[str, str]:
+    return _COLUMN_LABELS_FA if is_fa() else _COLUMN_LABELS_EN
 
 
 # Contract: _to_fa_digits converts English digits to Persian glyphs.
@@ -72,19 +130,19 @@ def _to_fa_digits(value: str | int) -> str:
 # Contract: _normalize_value normalizes null-like values for display.
 def _normalize_value(value: Any) -> str:
     if value is None:
-        return "ثبت نشده"
+        return t("ثبت نشده", "Not set")
     if pd.isna(value):
-        return "ثبت نشده"
+        return t("ثبت نشده", "Not set")
     text = str(value).strip()
     if text.lower() in {"", "none", "nan", "null"}:
-        return "ثبت نشده"
+        return t("ثبت نشده", "Not set")
     return text
 
 
 # Contract: _to_jalali_display converts Gregorian-like values to Jalali yyyy/mm/dd.
 def _to_jalali_display(value: Any) -> str:
     if value is None or pd.isna(value):
-        return "ثبت نشده"
+        return t("ثبت نشده", "Not set")
 
     g_date: date | None = None
     if isinstance(value, pd.Timestamp):
@@ -107,6 +165,8 @@ def _to_jalali_display(value: Any) -> str:
 
 # Contract: _localize_date_columns applies Jalali formatting on known date columns.
 def _localize_date_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if not is_fa():
+        return df.copy()
     localized = df.copy()
     for column in ("work_date", "followup_date", "visit_date"):
         if column in localized.columns:
@@ -117,16 +177,18 @@ def _localize_date_columns(df: pd.DataFrame) -> pd.DataFrame:
 # Contract: _map_status_columns localizes known enum-like status values.
 def _map_status_columns(df: pd.DataFrame) -> pd.DataFrame:
     normalized = df.copy()
+    visit_result_map = _visit_result_map()
+    assignment_status_map = _assignment_status_map()
 
     for column in ("visit_result", "result"):
         if column in normalized.columns:
             normalized[column] = normalized[column].apply(
-                lambda item: _VISIT_RESULT_MAP.get(str(item).strip().lower(), _normalize_value(item))
+                lambda item: visit_result_map.get(str(item).strip().lower(), _normalize_value(item))
             )
 
     if "assignment_status" in normalized.columns:
         normalized["assignment_status"] = normalized["assignment_status"].apply(
-            lambda item: _ASSIGNMENT_STATUS_MAP.get(str(item).strip().lower(), _normalize_value(item))
+            lambda item: assignment_status_map.get(str(item).strip().lower(), _normalize_value(item))
         )
 
     return normalized
@@ -135,7 +197,8 @@ def _map_status_columns(df: pd.DataFrame) -> pd.DataFrame:
 # Contract: _rename_columns applies Persian headers for known columns.
 def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:
     renamed = df.copy()
-    applicable = {col: _COLUMN_LABELS[col] for col in renamed.columns if col in _COLUMN_LABELS}
+    labels = _column_labels()
+    applicable = {col: labels[col] for col in renamed.columns if col in labels}
     if applicable:
         renamed = renamed.rename(columns=applicable)
     return renamed
@@ -196,7 +259,7 @@ def render_rtl_table(
     enable_search: bool = True,
 ) -> None:
     if df.empty:
-        st.info("داده‌ای برای نمایش در جدول وجود ندارد.")
+        st.info(t("داده‌ای برای نمایش در جدول وجود ندارد.", "No data is available for table display."))
         return
 
     normalized = _localize_date_columns(df)
@@ -204,12 +267,29 @@ def render_rtl_table(
     normalized = _rename_columns(normalized)
     normalized = _sanitize_df(normalized)
 
+    grade_header = t("گرید فروشگاه", "Store Grade")
+    search_label = t("جست‌وجو در جدول", "Search in table")
+    search_placeholder = t("مثال: STR-101 یا زر استور", "Example: STR-101 or Zar Store")
+    no_results_text = t("موردی پیدا نشد.", "No records found.")
+    sort_caption = t("برای مرتب‌سازی، روی عنوان هر ستون کلیک کنید.", "Click any column header to sort.")
+    text_direction = direction()
+    text_align = align()
+    locale = "fa" if is_fa() else "en"
+    font_stack = (
+        "Vazirmatn, IRANSansFaNum, Tahoma, Arial, sans-serif"
+        if is_fa()
+        else "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+    )
+    first_header_radius = "border-top-right-radius" if is_fa() else "border-top-left-radius"
+    last_header_radius = "border-top-left-radius" if is_fa() else "border-top-right-radius"
+    sort_margin_side = "margin-right" if is_fa() else "margin-left"
+
     filtered = normalized
     if enable_search:
         query = st.text_input(
-            "جست‌وجو در جدول",
+            search_label,
             key=f"{key_prefix}_search",
-            placeholder="مثال: STR-101 یا زر استور",
+            placeholder=search_placeholder,
         )
         filtered = _apply_search(normalized, query)
 
@@ -233,20 +313,20 @@ def render_rtl_table(
       body {{
         margin: 0;
         padding: 0;
-        direction: rtl;
-        font-family: Vazirmatn, IRANSansFaNum, Tahoma, Arial, sans-serif;
+        direction: {text_direction};
+        font-family: {font_stack};
         background: transparent;
         color: #2C3E50;
       }}
       .bex-table-root {{
-        direction: rtl;
-        text-align: right;
+        direction: {text_direction};
+        text-align: {text_align};
       }}
       .bex-table-caption {{
         color: #5A6878;
         font-size: 0.82rem;
         margin: 0.1rem 0 0.32rem;
-        text-align: right;
+        text-align: {text_align};
       }}
       .bex-table-wrap {{
         max-height: {int(visible_table_height)}px;
@@ -278,7 +358,7 @@ def render_rtl_table(
         width: 100%;
         border-collapse: collapse;
         border-spacing: 0;
-        direction: rtl;
+        direction: {text_direction};
         table-layout: auto;
       }}
       .bex-rtl-table th,
@@ -299,10 +379,10 @@ def render_rtl_table(
         cursor: pointer;
         user-select: none;
       }}
-      .bex-rtl-table th:first-child {{ border-top-right-radius: 10px; }}
-      .bex-rtl-table th:last-child {{ border-top-left-radius: 10px; }}
+      .bex-rtl-table th:first-child {{ {first_header_radius}: 10px; }}
+      .bex-rtl-table th:last-child {{ {last_header_radius}: 10px; }}
       .bex-sort-ind {{
-        margin-right: 0.25rem;
+        {sort_margin_side}: 0.25rem;
         font-size: 0.75rem;
         color: #64748B;
       }}
@@ -344,11 +424,11 @@ def render_rtl_table(
           const va = toEnDigits(vaRaw);
           const vb = toEnDigits(vbRaw);
 
-          if (key === "گرید فروشگاه") {{
+          if (key === {json.dumps(grade_header, ensure_ascii=False)}) {{
             const ga = gradeOrder[(va || "").toUpperCase()] ?? 0;
             const gb = gradeOrder[(vb || "").toUpperCase()] ?? 0;
             if (ga !== gb) return (ga - gb) * sortDir;
-            return va.localeCompare(vb, "fa", {{ numeric: true }}) * sortDir;
+            return va.localeCompare(vb, {json.dumps(locale)}, {{ numeric: true }}) * sortDir;
           }}
 
           const ja = parseJalali(va);
@@ -359,7 +439,7 @@ def render_rtl_table(
           const nb = parseNumber(vb);
           if (na !== null && nb !== null && na !== nb) return (na - nb) * sortDir;
 
-          return va.localeCompare(vb, "fa", {{ numeric: true, sensitivity: "base" }}) * sortDir;
+          return va.localeCompare(vb, {json.dumps(locale)}, {{ numeric: true, sensitivity: "base" }}) * sortDir;
         }};
 
         const sortedRows = (rows) => {{
@@ -377,7 +457,7 @@ def render_rtl_table(
             sortDir = sortDir * -1;
           }} else {{
             sortKey = key;
-            sortDir = key === "گرید فروشگاه" ? -1 : 1;
+            sortDir = key === {json.dumps(grade_header, ensure_ascii=False)} ? -1 : 1;
           }}
           renderHeader();
           renderBody();
@@ -414,13 +494,13 @@ def render_rtl_table(
           const rows = sortedRows(allRows);
           const rowsHtml = rows.length
             ? rows.map((row) => `<tr>${{columns.map((col) => `<td>${{String(row[col] ?? "")}}</td>`).join("")}}</tr>`).join("")
-            : `<tr><td colspan="${{columns.length || 1}}"><div class="bex-empty">موردی پیدا نشد.</div></td></tr>`;
+            : `<tr><td colspan="${{columns.length || 1}}"><div class="bex-empty">{no_results_text}</div></td></tr>`;
           tbody.innerHTML = rowsHtml;
           requestFrameHeight();
         }};
 
         root.innerHTML = `
-          <div class="bex-table-caption">برای مرتب‌سازی، روی عنوان هر ستون کلیک کنید.</div>
+          <div class="bex-table-caption">{sort_caption}</div>
           <div class="bex-table-wrap">
             <table class="bex-rtl-table">
               <thead id="{table_id}_thead"></thead>

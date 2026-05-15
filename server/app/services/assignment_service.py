@@ -632,67 +632,111 @@ def get_work_date_operational_snapshot(db: Session, work_date: date) -> dict:
     }
 
 
-# Contract: _rebuild_store_schedule_state_from_history executes one deterministic step in the workflow.
-def _rebuild_store_schedule_state_from_history(
+def _rebuild_store_schedule_states_for_stores(
     db: Session,
-    store_id: int,
+    store_ids: list[int],
     baseline_date: date,
 ) -> None:
-    state = (
-        db.query(StoreScheduleState)
-        .filter(StoreScheduleState.store_id == store_id)
-        .first()
+    """Replay every visit + telesales event for `store_ids` in memory and
+    update each StoreScheduleState row in a single batch.
+
+    Previously this was an O(N · E) pattern (N stores, E events each) with
+    per-store and per-event SQL round trips. The hot loop fetched Store and
+    StoreScheduleState rows again on every event. The new implementation does
+    a fixed number of queries regardless of N:
+      1 query for stores, 1 for states, 1 for visits, 1 for followups,
+      then pure-Python replay using the apply_*_event_to_state helpers.
+    """
+    if not store_ids:
+        return
+
+    sorted_ids = sorted(set(int(sid) for sid in store_ids))
+
+    stores = store_repository.list_stores_by_ids(db=db, store_ids=sorted_ids)
+    stores_by_id = {int(s.id): s for s in stores}
+
+    existing_states = store_repository.list_schedule_states_by_store_ids(
+        db=db, store_ids=sorted_ids
     )
-    if not state:
-        state = StoreScheduleState(
+    states_by_store_id: dict[int, StoreScheduleState] = {
+        int(s.store_id): s for s in existing_states
+    }
+
+    # Create missing state rows up front (one flush rather than per-store).
+    missing_state_store_ids = [
+        sid for sid in sorted_ids if sid not in states_by_store_id
+    ]
+    for store_id in missing_state_store_ids:
+        new_state = StoreScheduleState(
             store_id=store_id,
             next_visit_date=baseline_date,
             overdue_days=0,
             in_telesales_queue=False,
         )
-        db.add(state)
+        db.add(new_state)
+        states_by_store_id[store_id] = new_state
+    if missing_state_store_ids:
         db.flush()
 
-    state.last_visit_date = None
-    state.last_visit_result = None
-    state.next_visit_date = baseline_date
-    state.overdue_days = 0
-    state.in_telesales_queue = False
+    # Reset every state to its baseline; the replay below will overwrite it
+    # if any events exist.
+    for store_id in sorted_ids:
+        state = states_by_store_id[store_id]
+        state.last_visit_date = None
+        state.last_visit_result = None
+        state.next_visit_date = baseline_date
+        state.overdue_days = 0
+        state.in_telesales_queue = False
 
-    events: list[tuple[date, int, str, str]] = []
-
-    visit_rows = visit_repository.list_visit_events_for_store(db=db, store_id=store_id)
-    for visit_date, result in visit_rows:
-        events.append((visit_date, 0, "visit", result))
-
-    followup_rows = (
-        telesales_followup_repository.list_finalized_followup_events_for_store(
-            db=db,
-            store_id=store_id,
+    visits_by_store = visit_repository.list_visit_events_grouped_by_store(
+        db=db, store_ids=sorted_ids
+    )
+    followups_by_store = (
+        telesales_followup_repository.list_finalized_followup_events_grouped_by_store(
+            db=db, store_ids=sorted_ids
         )
     )
-    for followup_date, result in followup_rows:
-        events.append((followup_date, 1, "followup", result))
 
-    events.sort(key=lambda item: (item[0], item[1]))
+    for store_id in sorted_ids:
+        store = stores_by_id.get(store_id)
+        if store is None:
+            # Store was deleted but state remains; leave at baseline.
+            continue
+        state = states_by_store_id[store_id]
 
-    for event_date, _, event_type, value in events:
-        if event_type == "visit":
-            scheduling_service.apply_visit_result_to_schedule(
-                db=db,
-                store_id=store_id,
-                visit_date=event_date,
-                visit_result=value,
-                commit=False,
-            )
-        else:
-            scheduling_service.apply_telesales_outcome_to_schedule(
-                db=db,
-                store_id=store_id,
-                followup_date=event_date,
-                outcome=value,
-                commit=False,
-            )
+        events: list[tuple[date, int, str, str]] = []
+        for visit_date, result in visits_by_store.get(store_id, []):
+            events.append((visit_date, 0, "visit", result))
+        for followup_date, result in followups_by_store.get(store_id, []):
+            events.append((followup_date, 1, "followup", result))
+        events.sort(key=lambda item: (item[0], item[1]))
+
+        for event_date, _ordering, event_type, value in events:
+            if event_type == "visit":
+                scheduling_service.apply_visit_event_to_state(
+                    state=state,
+                    store=store,
+                    visit_date=event_date,
+                    visit_result=value,
+                )
+            else:
+                scheduling_service.apply_telesales_event_to_state(
+                    state=state,
+                    store=store,
+                    followup_date=event_date,
+                    outcome=value,
+                )
+
+
+# Backward-compatible single-store wrapper for any external caller.
+def _rebuild_store_schedule_state_from_history(
+    db: Session,
+    store_id: int,
+    baseline_date: date,
+) -> None:
+    _rebuild_store_schedule_states_for_stores(
+        db=db, store_ids=[int(store_id)], baseline_date=baseline_date
+    )
 
 
 # Contract: flush_work_date_operational_data executes one deterministic step in the workflow.
@@ -730,12 +774,11 @@ def flush_work_date_operational_data(
 
     try:
         db.flush()
-        for store_id in sorted(affected_store_ids):
-            _rebuild_store_schedule_state_from_history(
-                db=db,
-                store_id=store_id,
-                baseline_date=work_date,
-            )
+        _rebuild_store_schedule_states_for_stores(
+            db=db,
+            store_ids=sorted(affected_store_ids),
+            baseline_date=work_date,
+        )
         db.commit()
     except Exception:
         db.rollback()

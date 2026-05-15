@@ -170,6 +170,38 @@ def get_due_store_ids(db: Session, target_date: date) -> list[int]:
     return get_due_store_ids_readonly(db=db, target_date=target_date)
 
 
+def apply_visit_event_to_state(
+    state: StoreScheduleState,
+    store: Store,
+    visit_date: date,
+    visit_result: str,
+) -> None:
+    """Pure in-memory transition. Mutates `state` with the new schedule values
+    after a visit event. No DB I/O. Use this for batch replay; for the live
+    write path call `apply_visit_result_to_schedule`.
+    """
+    normalized_result = str(visit_result or "").strip().lower()
+    allowed_results = {item.value for item in VisitResult}
+    if normalized_result not in allowed_results:
+        raise ValueError(err("invalid_visit_result"))
+
+    state.last_visit_date = visit_date
+    state.last_visit_result = normalized_result
+
+    if normalized_result == VisitResult.GREEN.value:
+        interval_days = get_store_visit_interval_days(store)
+        state.next_visit_date = visit_date + timedelta(days=interval_days)
+        state.in_telesales_queue = False
+    elif normalized_result == VisitResult.YELLOW.value:
+        state.next_visit_date = visit_date + timedelta(days=YELLOW_RETRY_DAYS)
+        state.in_telesales_queue = False
+    else:
+        state.next_visit_date = None
+        state.in_telesales_queue = True
+
+    state.overdue_days = compute_overdue_days(state.next_visit_date, visit_date)
+
+
 # Contract: apply_visit_result_to_schedule executes one deterministic step in the workflow.
 def apply_visit_result_to_schedule(
     db: Session,
@@ -178,32 +210,13 @@ def apply_visit_result_to_schedule(
     visit_result: str,
     commit: bool = True,
 ) -> StoreScheduleState:
-    normalized_result = str(visit_result or "").strip().lower()
-    allowed_results = {item.value for item in VisitResult}
-    if normalized_result not in allowed_results:
-        raise ValueError(err("invalid_visit_result"))
-
     store = db.query(Store).filter(Store.id == store_id).first()
     if not store:
         raise ValueError(err("store_not_found"))
 
     try:
         state = _get_or_create_state(db, store_id, visit_date)
-        state.last_visit_date = visit_date
-        state.last_visit_result = normalized_result
-
-        if normalized_result == VisitResult.GREEN.value:
-            interval_days = get_store_visit_interval_days(store)
-            state.next_visit_date = visit_date + timedelta(days=interval_days)
-            state.in_telesales_queue = False
-        elif normalized_result == VisitResult.YELLOW.value:
-            state.next_visit_date = visit_date + timedelta(days=YELLOW_RETRY_DAYS)
-            state.in_telesales_queue = False
-        else:
-            state.next_visit_date = None
-            state.in_telesales_queue = True
-
-        state.overdue_days = compute_overdue_days(state.next_visit_date, visit_date)
+        apply_visit_event_to_state(state, store, visit_date, visit_result)
 
         if commit:
             db.commit()
@@ -214,6 +227,40 @@ def apply_visit_result_to_schedule(
         raise
 
 
+def apply_telesales_event_to_state(
+    state: StoreScheduleState,
+    store: Store,
+    followup_date: date,
+    outcome: str,
+) -> None:
+    """Pure in-memory transition for a telesales outcome event. Mirror of
+    `apply_visit_event_to_state` — no DB I/O.
+    """
+    normalized_outcome = str(outcome or "").strip().lower()
+    allowed_outcomes = {item.value for item in TelesalesOutcome}
+    if normalized_outcome not in allowed_outcomes:
+        raise ValueError(err("invalid_telesales_outcome"))
+
+    state.last_visit_date = followup_date
+    state.last_visit_result = normalized_outcome
+
+    if normalized_outcome == TelesalesOutcome.SALE_DONE.value:
+        interval_days = get_store_visit_interval_days(store)
+        state.next_visit_date = followup_date + timedelta(days=interval_days)
+        state.in_telesales_queue = False
+    elif normalized_outcome == TelesalesOutcome.NO_NEED.value:
+        state.next_visit_date = followup_date + timedelta(days=TELESALES_NO_NEED_DELAY_DAYS)
+        state.in_telesales_queue = False
+    elif normalized_outcome == TelesalesOutcome.POSTPONE.value:
+        state.next_visit_date = None
+        state.in_telesales_queue = True
+    else:
+        state.next_visit_date = followup_date + timedelta(days=TELESALES_INVALID_DELAY_DAYS)
+        state.in_telesales_queue = False
+
+    state.overdue_days = compute_overdue_days(state.next_visit_date, followup_date)
+
+
 # Contract: apply_telesales_outcome_to_schedule executes one deterministic step in the workflow.
 def apply_telesales_outcome_to_schedule(
     db: Session,
@@ -222,35 +269,13 @@ def apply_telesales_outcome_to_schedule(
     outcome: str,
     commit: bool = True,
 ) -> StoreScheduleState:
-    normalized_outcome = str(outcome or "").strip().lower()
-    allowed_outcomes = {item.value for item in TelesalesOutcome}
-    if normalized_outcome not in allowed_outcomes:
-        raise ValueError(err("invalid_telesales_outcome"))
-
     store = db.query(Store).filter(Store.id == store_id).first()
     if not store:
         raise ValueError(err("store_not_found"))
 
     try:
         state = _get_or_create_state(db, store_id, followup_date)
-        state.last_visit_date = followup_date
-        state.last_visit_result = normalized_outcome
-
-        if normalized_outcome == TelesalesOutcome.SALE_DONE.value:
-            interval_days = get_store_visit_interval_days(store)
-            state.next_visit_date = followup_date + timedelta(days=interval_days)
-            state.in_telesales_queue = False
-        elif normalized_outcome == TelesalesOutcome.NO_NEED.value:
-            state.next_visit_date = followup_date + timedelta(days=TELESALES_NO_NEED_DELAY_DAYS)
-            state.in_telesales_queue = False
-        elif normalized_outcome == TelesalesOutcome.POSTPONE.value:
-            state.next_visit_date = None
-            state.in_telesales_queue = True
-        else:
-            state.next_visit_date = followup_date + timedelta(days=TELESALES_INVALID_DELAY_DAYS)
-            state.in_telesales_queue = False
-
-        state.overdue_days = compute_overdue_days(state.next_visit_date, followup_date)
+        apply_telesales_event_to_state(state, store, followup_date, outcome)
 
         if commit:
             db.commit()

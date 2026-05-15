@@ -53,6 +53,26 @@ def list_visit_events_for_store(db: Session, store_id: int) -> list[tuple]:
     )
 
 
+def list_visit_events_grouped_by_store(
+    db: Session, store_ids: list[int]
+) -> dict[int, list[tuple]]:
+    """Batch counterpart to list_visit_events_for_store. Returns one query's
+    worth of (store_id -> [(visit_date, result), ...]) instead of N round trips.
+    """
+    if not store_ids:
+        return {}
+    rows = (
+        db.query(Visit.store_id, Visit.visit_date, Visit.result, Visit.id)
+        .filter(Visit.store_id.in_(store_ids))
+        .order_by(Visit.store_id, Visit.visit_date, Visit.id)
+        .all()
+    )
+    grouped: dict[int, list[tuple]] = {int(sid): [] for sid in store_ids}
+    for store_id, visit_date, result, _row_id in rows:
+        grouped.setdefault(int(store_id), []).append((visit_date, result))
+    return grouped
+
+
 # Contract: list_pending_published_assignments_without_visit executes one deterministic step in the workflow.
 def list_pending_published_assignments_without_visit(
     db: Session, work_date: date

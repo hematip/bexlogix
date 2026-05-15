@@ -54,6 +54,32 @@ def list_finalized_followup_events_for_store(db: Session, store_id: int) -> list
     )
 
 
+def list_finalized_followup_events_grouped_by_store(
+    db: Session, store_ids: list[int]
+) -> dict[int, list[tuple]]:
+    """Batch counterpart to list_finalized_followup_events_for_store."""
+    if not store_ids:
+        return {}
+    rows = (
+        db.query(
+            TelesalesFollowup.store_id,
+            TelesalesFollowup.followup_date,
+            TelesalesFollowup.result,
+            TelesalesFollowup.id,
+        )
+        .filter(
+            TelesalesFollowup.store_id.in_(store_ids),
+            TelesalesFollowup.result.is_not(None),
+        )
+        .order_by(TelesalesFollowup.store_id, TelesalesFollowup.followup_date, TelesalesFollowup.id)
+        .all()
+    )
+    grouped: dict[int, list[tuple]] = {int(sid): [] for sid in store_ids}
+    for store_id, followup_date, result, _row_id in rows:
+        grouped.setdefault(int(store_id), []).append((followup_date, result))
+    return grouped
+
+
 # Contract: list_pending_followup_rows executes one deterministic step in the workflow.
 def list_pending_followup_rows(db: Session, as_of_date: date | None = None) -> list[tuple]:
     query = (

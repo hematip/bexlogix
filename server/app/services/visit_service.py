@@ -3,6 +3,7 @@
 
 from datetime import date, datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from server.app.errors import DomainError, PermissionError as AppPermissionError, ValidationError, err
@@ -71,7 +72,13 @@ def submit_visit_result(
             note=visit_note,
         )
         db.add(new_visit)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            # FIX: [CONCURRENCY] uq_visit_assignment_id stops duplicates even
+            # when two requests slip past the read check above.
+            db.rollback()
+            raise DomainError(err("visit_already_submitted")) from exc
 
         assignment.assignment_status = AssignmentStatus.COMPLETED.value
 
@@ -93,6 +100,8 @@ def submit_visit_result(
 
         db.commit()
         return new_visit
+    except DomainError:
+        raise
     except Exception:
         db.rollback()
         raise

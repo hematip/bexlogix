@@ -3,7 +3,7 @@
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from server.db.base import Base
@@ -13,9 +13,13 @@ from server.db.base import Base
 class Visit(Base):
     __tablename__ = 'visits'
 
+    __table_args__ = (
+        UniqueConstraint("assignment_id", name="uq_visit_assignment_id"),
+    )
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    # Link this visit to the daily assignment
+    # Link this visit to the daily assignment (exactly one visit per assignment).
     assignment_id: Mapped[int] = mapped_column(
         ForeignKey('daily_assignments.id'),
         nullable=False,

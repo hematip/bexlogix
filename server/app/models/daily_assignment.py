@@ -3,15 +3,20 @@
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from server.db.base import Base
 
-# Daily assignment of a store to a a visitor
+# Daily assignment of a store to a visitor.
 # Contract: DailyAssignment defines a typed boundary and should remain behavior-stable.
 class DailyAssignment(Base):
     __tablename__ = 'daily_assignments'
+
+    __table_args__ = (
+        # A store can be assigned to at most one visitor per work date.
+        UniqueConstraint("work_date", "store_id", name="uq_daily_assignment_date_store"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 

@@ -505,6 +505,9 @@ def publish_assignments(
     include_draft_override: bool = False,
 ) -> int:
     # FIX: [UX-10] Publish defaults to supervisor_approved; manager can override to include draft.
+    # FIX: [CONCURRENCY] Use a status-guarded UPDATE so concurrent managers
+    # cannot double-publish. Each assignment row transitions atomically from
+    # its expected source status to PUBLISHED.
     _assert_manager_user(db, manager_user_id)
 
     publishable_assignments = assignment_repository.list_assignments_for_publish(
@@ -519,17 +522,37 @@ def publish_assignments(
             else err("no_supervisor_approved_to_publish")
         )
 
-    try:
-        publish_time = datetime.now(timezone.utc)
-        for assignment in publishable_assignments:
-            assignment.assignment_status = AssignmentStatus.PUBLISHED.value
-            assignment.published_at = publish_time
+    expected_source_statuses = [AssignmentStatus.SUPERVISOR_APPROVED.value]
+    if include_draft_override:
+        expected_source_statuses.append(AssignmentStatus.DRAFT.value)
 
+    publish_time = datetime.now(timezone.utc)
+    target_ids = [int(a.id) for a in publishable_assignments]
+    try:
+        updated_count = (
+            db.query(DailyAssignment)
+            .filter(
+                DailyAssignment.id.in_(target_ids),
+                DailyAssignment.assignment_status.in_(expected_source_statuses),
+            )
+            .update(
+                {
+                    DailyAssignment.assignment_status: AssignmentStatus.PUBLISHED.value,
+                    DailyAssignment.published_at: publish_time,
+                },
+                synchronize_session=False,
+            )
+        )
         db.commit()
-        return len(publishable_assignments)
     except Exception:
         db.rollback()
         raise
+
+    if updated_count == 0:
+        # All rows transitioned out from under us between our read and update.
+        raise DomainError(err("publish_concurrent_modification"))
+
+    return int(updated_count)
 
 
 def approve_visitor_route_for_work_date(

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from math import asin, cos, radians, sin, sqrt
 
 from sqlalchemy.orm import Session
 
@@ -29,6 +28,7 @@ from server.app.repositories import (
     visitor_repository,
 )
 from server.app.services import routing_service, scheduling_service
+from server.app.utils.geo import haversine_km
 
 QUALITY_GATE_THRESHOLD_PCT = 20.0
 
@@ -46,22 +46,13 @@ def _assert_supervisor_user(db: Session, supervisor_user_id: int) -> None:
     # FIX: [UX-10] Explicit permission boundary for supervisor approval workflow.
     user = user_repository.get_user_by_id(db, supervisor_user_id)
     if not user:
-        raise ValidationError("کاربر سرپرست معتبر پیدا نشد.")
+        raise ValidationError(err("supervisor_user_not_found"))
     if user.role != UserRole.SUPERVISOR.value:
         raise AppPermissionError(err("supervisor_only_approve"))
 
 
-# Contract: _haversine_km executes one deterministic step in the workflow.
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    radius_km = 6371.0
-    d_lat = radians(lat2 - lat1)
-    d_lon = radians(lon2 - lon1)
-    a = (
-        sin(d_lat / 2) ** 2
-        + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
-    )
-    c = 2 * asin(sqrt(a))
-    return radius_km * c
+# Backward-compatible alias for the shared utility.
+_haversine_km = haversine_km
 
 
 # Contract: get_active_visitor_day_contexts executes one deterministic step in the workflow.
@@ -283,7 +274,6 @@ def generate_draft_assignments(
     due_stores = _get_due_stores_sorted(db, work_date)
 
     solver_mode_config = str(config.ROUTING_SOLVER_MODE or "auto").strip().lower()
-    shadow_enabled = bool(config.ROUTING_SHADOW_MODE)
 
     store_by_id = {int(store.id): store for store in due_stores}
     solver_store_rows = [
@@ -304,24 +294,6 @@ def generate_draft_assignments(
             base_url=config.VROOM_BASE_URL,
             timeout_seconds=config.VROOM_TIMEOUT_SECONDS,
         )
-
-    shadow: dict | None = None
-    if shadow_enabled and solver_mode_config == "legacy" and visitors and due_stores:
-        shadow_candidate = routing_service.solve_day_assignments_with_vroom(
-            visitors=visitors,
-            stores=solver_store_rows,
-            base_url=config.VROOM_BASE_URL,
-            timeout_seconds=config.VROOM_TIMEOUT_SECONDS,
-        )
-        shadow = {
-            "enabled": True,
-            "status": (
-                "ok" if shadow_candidate.solver_mode == "vroom" else "failed"
-            ),
-            "solver_reason": shadow_candidate.solver_reason,
-            "assigned_count": int(len(shadow_candidate.assignments)),
-            "unassigned_count": int(len(shadow_candidate.unassigned_store_ids)),
-        }
 
     created_count = 0
     assigned_store_ids: set[int] = set()
@@ -369,39 +341,46 @@ def generate_draft_assignments(
                         "store_code": str(store.store_code),
                     }
                 )
-            cumulative_distances = routing_service.fetch_osrm_cumulative_distances_km(
+            osrm_cumulative = routing_service.fetch_osrm_cumulative_distances_km(
                 start_lat=float(start_lat) if start_lat is not None else None,
                 start_lon=float(start_lon) if start_lon is not None else None,
                 ordered_stops=ordered_stop_rows,
             )
+            # FIX: Build a defensive cumulative list whose length equals the
+            # number of ordered stops; never let it be shorter than the consumer
+            # expects.
+            cumulative_distances: list[float | None]
             if (
-                cumulative_distances is None
-                or len(cumulative_distances) != len(ordered_stop_rows)
+                osrm_cumulative is not None
+                and len(osrm_cumulative) == len(ordered_stop_rows)
             ):
-                cumulative_distances = []
-                if start_lat is None or start_lon is None:
-                    cumulative_distances = [None] * len(ordered_stop_rows)
-                else:
-                    total_km = 0.0
-                    current_lat = float(start_lat)
-                    current_lon = float(start_lon)
-                    for stop in ordered_stop_rows:
-                        total_km += _haversine_km(
-                            current_lat,
-                            current_lon,
-                            float(stop["lat"]),
-                            float(stop["lon"]),
-                        )
-                        cumulative_distances.append(round(total_km, 3))
-                        current_lat = float(stop["lat"])
-                        current_lon = float(stop["lon"])
+                cumulative_distances = list(osrm_cumulative)
+            elif start_lat is None or start_lon is None:
+                cumulative_distances = [None] * len(ordered_stop_rows)
+            else:
+                ordered_points = [
+                    (float(stop["lat"]), float(stop["lon"]))
+                    for stop in ordered_stop_rows
+                ]
+                from server.app.utils.geo import cumulative_path_distance_km
+
+                cumulative_distances = list(
+                    cumulative_path_distance_km(
+                        float(start_lat), float(start_lon), ordered_points
+                    )
+                )
+                # Pad with None if somehow shorter (should not happen).
+                while len(cumulative_distances) < len(ordered_stop_rows):
+                    cumulative_distances.append(None)
+
             for normalized_order, item in enumerate(ordered_rows, start=1):
-                distance_km: float | None = None
                 index = normalized_order - 1
-                if index < len(cumulative_distances):
+                if 0 <= index < len(cumulative_distances):
                     distance_km = cumulative_distances[index]
                 elif item.route_distance_km is not None:
                     distance_km = float(item.route_distance_km)
+                else:
+                    distance_km = None
                 planned_assignments.append(
                     routing_service.PlannedAssignment(
                         visitor_id=int(item.visitor_id),
@@ -501,7 +480,6 @@ def generate_draft_assignments(
         "fallback_stage": fallback_stage,
         "solver_reason": solver_reason,
         "route_summary": route_summary,
-        "shadow": shadow,
     }
 
 

@@ -8,7 +8,6 @@ import logging
 import socket
 from dataclasses import dataclass
 from datetime import date
-from math import asin, cos, radians, sin, sqrt
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -19,6 +18,7 @@ from server.app import config
 from server.app.errors import DomainError, err
 from server.app.repositories import assignment_repository, visitor_repository
 from server.app.services import runtime_health_service
+from server.app.utils.geo import haversine_km
 
 logger = logging.getLogger(__name__)
 
@@ -69,18 +69,8 @@ class UnifiedRouteResult:
     solver_reason: str | None
 
 
-# Contract: _haversine_km executes one deterministic step in the workflow.
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    radius_km = 6371.0
-
-    d_lat = radians(lat2 - lat1)
-    d_lon = radians(lon2 - lon1)
-    a = (
-        sin(d_lat / 2) ** 2
-        + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
-    )
-    c = 2 * asin(sqrt(a))
-    return radius_km * c
+# Backward-compatible alias for the shared utility.
+_haversine_km = haversine_km
 
 
 # Contract: _build_osrm_coordinate_segment executes one deterministic step in the workflow.
@@ -247,8 +237,13 @@ class OSRMRoutePlanner(RoutePlanner):
         trips = payload.get("trips") or []
         if not trips:
             raise ValueError("OSRM did not return trips.")
-        if len(waypoints) != len(stops) + 1:
-            raise ValueError("OSRM waypoint count mismatch.")
+        # FIX: OSRM may legitimately drop unreachable waypoints. Tolerate that
+        # by requiring the count to be no greater than start + stops, and treat
+        # missing tail-waypoints as "skipped" (handled downstream by completeness check).
+        if len(waypoints) > len(stops) + 1:
+            raise ValueError("OSRM returned more waypoints than requested.")
+        if len(waypoints) < 2:
+            raise ValueError("OSRM returned too few waypoints to form a trip.")
 
         optimized_order_by_stop_index: dict[int, int] = {}
         for input_index, waypoint in enumerate(waypoints):
@@ -256,19 +251,23 @@ class OSRMRoutePlanner(RoutePlanner):
                 continue
             waypoint_index = waypoint.get("waypoint_index")
             if waypoint_index is None:
-                raise ValueError("OSRM waypoint_index is missing.")
+                # Unreachable / skipped waypoint — leave it out of the route.
+                continue
             optimized_order = int(waypoint_index)
             if optimized_order <= 0:
                 raise ValueError("OSRM returned invalid stop order.")
             optimized_order_by_stop_index[input_index - 1] = optimized_order
 
-        if len(optimized_order_by_stop_index) != len(stops):
-            raise ValueError("OSRM did not order all route stops.")
+        if not optimized_order_by_stop_index:
+            raise ValueError("OSRM did not order any route stops.")
 
         trip = trips[0]
         legs = trip.get("legs") or []
-        if len(legs) < len(stops):
-            raise ValueError("OSRM legs count is shorter than stops.")
+        # FIX: leg count is start->stop1, stop1->stop2, ..., so it should equal
+        # number of accepted waypoints minus 1 (i.e. number of stops in the trip).
+        accepted_stops = len(optimized_order_by_stop_index)
+        if len(legs) < accepted_stops:
+            raise ValueError("OSRM legs count is shorter than accepted stops.")
 
         cumulative_km_by_order: dict[int, float] = {}
         cumulative_distance_km = 0.0

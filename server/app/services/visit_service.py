@@ -23,7 +23,7 @@ from server.app.services import scheduling_service, telesales_service
 def _assert_manager_user(db: Session, user_id: int) -> None:
     user = user_repository.get_user_by_id(db, user_id)
     if not user:
-        raise ValidationError("کاربر مدیر پیدا نشد.")
+        raise ValidationError(err("manager_user_not_found"))
     if user.role != UserRole.MANAGER.value:
         raise AppPermissionError(err("manager_only_finalize"))
 
@@ -44,7 +44,7 @@ def submit_visit_result(
 
     assignment = assignment_repository.get_assignment_by_id(db, assignment_id)
     if not assignment:
-        raise ValidationError("تخصیص موردنظر پیدا نشد.")
+        raise ValidationError(err("assignment_not_found"))
     if assignment.assignment_status != AssignmentStatus.PUBLISHED.value:
         raise DomainError(err("visit_only_published"))
 

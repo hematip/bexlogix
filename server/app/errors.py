@@ -31,10 +31,13 @@ PERSIAN_ERROR_MESSAGES: dict[str, str] = {
     "non_draft_exists_block_regen": "برای این تاریخ قبلاً مسیر منتشر یا نهایی شده است. بازتولید مستقیم مجاز نیست.",
     "draft_exists_for_date": "برای این تاریخ پیش‌نویس موجود است. ابتدا پیش‌نویس قبلی را بازنشانی کنید.",
     "manager_user_not_found": "کاربر مدیر معتبر پیدا نشد.",
+    "supervisor_user_not_found": "کاربر سرپرست معتبر پیدا نشد.",
     "supervisor_only_approve": "فقط کاربر سرپرست اجازه تأیید مسیر را دارد.",
+    "publish_concurrent_modification": "انتشار همزمان شناسایی شد. لطفاً صفحه را تازه کنید و دوباره تلاش کنید.",
     "no_draft_for_visitor_approve": "برای این ویزیتور مسیر پیش‌نویس قابل تأیید وجود ندارد.",
     "no_supervisor_approved_to_publish": "مسیر تأییدشده توسط سرپرست برای انتشار وجود ندارد.",
     # Visit service
+    "assignment_not_found": "تخصیص موردنظر پیدا نشد.",
     "visit_only_published": "ثبت نتیجه ویزیت فقط برای مسیرهای منتشرشده مجاز است.",
     "visit_only_own_assignment": "شما فقط می‌توانید نتیجه ویزیت مسیرهای خودتان را ثبت کنید.",
     "visit_already_submitted": "نتیجه این ویزیت قبلاً ثبت شده است.",

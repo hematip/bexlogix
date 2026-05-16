@@ -108,7 +108,41 @@ def submit_visit_result(
 
 
 # Contract: finalize_unsubmitted_assignments executes one deterministic step in the workflow.
-def finalize_unsubmitted_assignments(db: Session, work_date: date, actor_user_id: int) -> int:
+def list_unsubmitted_assignments_preview(
+    db: Session, work_date: date
+) -> list[dict]:
+    """Return a lightweight preview of assignments that would be auto-marked
+    red by finalize_unsubmitted_assignments. The UI should show this to the
+    manager before they confirm; auto-red is destructive and pushes stores to
+    the telesales queue."""
+    rows = visit_repository.list_pending_published_assignments_without_visit(
+        db=db, work_date=work_date
+    )
+    return [
+        {
+            "assignment_id": int(row.id),
+            "visitor_id": int(row.visitor_id),
+            "store_id": int(row.store_id),
+        }
+        for row in rows
+    ]
+
+
+def finalize_unsubmitted_assignments(
+    db: Session,
+    work_date: date,
+    actor_user_id: int,
+    *,
+    expected_pending_count: int | None = None,
+) -> int:
+    """Auto-mark every still-published assignment as red.
+
+    This is destructive: it creates visit rows, transitions assignments to
+    SKIPPED, and pushes affected stores into the telesales queue. The
+    `expected_pending_count` argument lets the caller confirm intent — if it
+    does not match the current count, the operation aborts with a domain
+    error so a stale UI cannot silently auto-red yesterday's leftovers.
+    """
     _assert_manager_user(db, actor_user_id)
 
     pending_assignments = visit_repository.list_pending_published_assignments_without_visit(
@@ -118,6 +152,12 @@ def finalize_unsubmitted_assignments(db: Session, work_date: date, actor_user_id
 
     if not pending_assignments:
         return 0
+
+    if (
+        expected_pending_count is not None
+        and int(expected_pending_count) != len(pending_assignments)
+    ):
+        raise DomainError(err("finalize_unsubmitted_count_mismatch"))
 
     created_visits = 0
     try:

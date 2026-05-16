@@ -43,6 +43,7 @@ PERSIAN_ERROR_MESSAGES: dict[str, str] = {
     "visit_already_submitted": "نتیجه این ویزیت قبلاً ثبت شده است.",
     "visitor_profile_not_found": "پروفایل ویزیتور مرتبط با این تخصیص پیدا نشد.",
     "manager_only_finalize": "فقط مدیر می‌تواند موارد ثبت‌نشده را نهایی کند.",
+    "finalize_unsubmitted_count_mismatch": "تعداد موارد ثبت‌نشده تغییر کرده است. صفحه را تازه کنید و دوباره تلاش کنید.",
     # Telesales service
     "telesales_only_submit": "فقط کاربران فروش تلفنی می‌توانند نتیجه پیگیری را ثبت کنند.",
     "followup_already_finalized": "این پیگیری قبلاً نهایی شده است.",

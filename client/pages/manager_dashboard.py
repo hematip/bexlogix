@@ -726,24 +726,61 @@ def render_manager_dashboard(current_user: dict) -> None:
                 st.error(f"خطا در انتشار مسیرها: {exc}")
 
     with op2:
+        # FIX: Two-step confirmation. Auto-marking unsubmitted assignments as
+        # red is destructive (creates visits, pushes stores into telesales
+        # queue) so we preview the count first and confirm against it.
+        preview_key = f"finalize_preview_{work_date_iso}"
+        confirm_key = f"finalize_confirm_{work_date_iso}"
         if st.button(
             "🔒 نهایی‌سازی موارد ثبت‌نشده",
             key=f"finalize_{work_date_iso}",
             use_container_width=True,
             disabled=is_hard_locked,
         ):
-            try:
-                with get_db() as db:
-                    count = visit_service.finalize_unsubmitted_assignments(
-                        db=db,
-                        work_date=work_date,
-                        actor_user_id=current_user["id"],
-                    )
-                st.success(f"{count} تخصیص ثبت‌نشده به‌صورت خودکار قرمز شد.")
-                st.cache_data.clear()
-                st.rerun()
-            except Exception as exc:
-                st.error(f"خطا در نهایی‌سازی: {exc}")
+            with get_db() as db:
+                pending_preview = visit_service.list_unsubmitted_assignments_preview(
+                    db=db, work_date=work_date
+                )
+            st.session_state[preview_key] = pending_preview
+            st.session_state[confirm_key] = False
+
+        pending_preview = st.session_state.get(preview_key)
+        if pending_preview is not None:
+            pending_count = len(pending_preview)
+            if pending_count == 0:
+                st.info("هیچ تخصیص ثبت‌نشده‌ای وجود ندارد.")
+                st.session_state.pop(preview_key, None)
+            else:
+                st.warning(
+                    f"{pending_count} تخصیص ثبت‌نشده به‌صورت خودکار قرمز و وارد صف "
+                    "فروش تلفنی خواهند شد. این عمل بازگشت‌پذیر نیست. آیا مطمئن‌اید؟"
+                )
+                confirmed = st.checkbox(
+                    "تأیید می‌کنم",
+                    key=confirm_key,
+                )
+                if st.button(
+                    "اجرای نهایی‌سازی",
+                    key=f"finalize_execute_{work_date_iso}",
+                    disabled=not confirmed,
+                ):
+                    try:
+                        with get_db() as db:
+                            count = visit_service.finalize_unsubmitted_assignments(
+                                db=db,
+                                work_date=work_date,
+                                actor_user_id=current_user["id"],
+                                expected_pending_count=pending_count,
+                            )
+                        st.success(
+                            f"{count} تخصیص ثبت‌نشده به‌صورت خودکار قرمز شد."
+                        )
+                        st.session_state.pop(preview_key, None)
+                        st.session_state.pop(confirm_key, None)
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"خطا در نهایی‌سازی: {exc}")
 
     neu_section_header("شاخص‌های روزانه")
     render_metric_grid(

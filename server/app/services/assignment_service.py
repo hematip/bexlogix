@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -29,6 +30,8 @@ from server.app.repositories import (
 )
 from server.app.services import routing_service, scheduling_service
 from server.app.utils.geo import haversine_km
+
+logger = logging.getLogger(__name__)
 
 QUALITY_GATE_THRESHOLD_PCT = 20.0
 
@@ -274,6 +277,13 @@ def generate_draft_assignments(
     due_stores = _get_due_stores_sorted(db, work_date)
 
     solver_mode_config = str(config.ROUTING_SOLVER_MODE or "auto").strip().lower()
+    logger.info(
+        "assignment_pipeline.start work_date=%s active_visitors=%d due_stores=%d solver=%s",
+        work_date.isoformat(),
+        len(visitors),
+        len(due_stores),
+        solver_mode_config,
+    )
 
     store_by_id = {int(store.id): store for store in due_stores}
     solver_store_rows = [
@@ -468,6 +478,17 @@ def generate_draft_assignments(
             store.id for store in due_stores if store.id not in assigned_store_ids
         ]
 
+    logger.info(
+        "assignment_pipeline.done work_date=%s solver_mode=%s created=%d unassigned=%d "
+        "routes_precomputed=%s fallback_stage=%s solver_reason=%s",
+        work_date.isoformat(),
+        solver_mode,
+        created_count,
+        len(unassigned_store_ids),
+        routes_precomputed,
+        fallback_stage,
+        solver_reason,
+    )
     return {
         "work_date": work_date.isoformat(),
         "active_visitors": len(visitors),
@@ -781,9 +802,29 @@ def flush_work_date_operational_data(
         )
         db.commit()
     except Exception:
+        logger.exception(
+            "flush_work_date_operational_data.failed work_date=%s manager_user_id=%s "
+            "deleted_assignments=%d deleted_visits=%d deleted_followups=%d affected_stores=%d",
+            work_date.isoformat(),
+            manager_user_id,
+            assignments_deleted,
+            visits_deleted,
+            followup_deleted,
+            len(affected_store_ids),
+        )
         db.rollback()
         raise
 
+    logger.warning(
+        "flush_work_date_operational_data.committed work_date=%s manager_user_id=%s "
+        "deleted_assignments=%d deleted_visits=%d deleted_followups=%d affected_stores=%d",
+        work_date.isoformat(),
+        manager_user_id,
+        assignments_deleted,
+        visits_deleted,
+        followup_deleted,
+        len(affected_store_ids),
+    )
     return {
         "work_date": work_date.isoformat(),
         "assignments_deleted": int(assignments_deleted),

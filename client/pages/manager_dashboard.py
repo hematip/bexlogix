@@ -14,6 +14,7 @@ from client.components.empty_state import get_empty_state_message
 from client.components.jalali_date import jalali_date_input
 from client.components.rtl_table import render_rtl_table
 from client.components.route_map import render_route_map
+from server.app.errors import DomainError
 from client.styles.neumorphism import (
     neu_section_header,
     render_metric_grid,
@@ -328,7 +329,7 @@ def _run_apply_files_and_build_route(
                     not bool(runtime_state.get("tiles_up", False))
                 ):
                     _render_offline_stack_starter(
-                        key_prefix=f"pipeline_starter_{work_date_iso}"
+                        key_prefix=f"pipeline_starter_{work_date.isoformat()}"
                     )
                 route_summary: dict
                 routes_precomputed = bool(draft_summary.get("routes_precomputed"))
@@ -694,6 +695,11 @@ def render_manager_dashboard(current_user: dict) -> None:
                 st.session_state["manager_last_pipeline_date"] = work_date_iso
                 st.cache_data.clear()
                 st.rerun()
+            except DomainError as exc:
+                # Business-rule rejection (e.g. routing for this date already
+                # past the draft stage). The message is already operator-facing
+                # and tells the user exactly which recovery action to take.
+                st.warning(str(exc))
             except Exception as exc:
                 st.error(f"خطا در ساخت مسیر: {exc}")
 

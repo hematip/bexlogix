@@ -12,6 +12,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -119,4 +122,68 @@ def bring_up_offline_stack(timeout_seconds: float = 90.0) -> dict:
         "message": "سرویس‌های آفلاین در حال راه‌اندازی هستند. "
                    "چند ثانیه صبر کنید تا health-check سبز شود.",
         "tile_mb_file": info["mbtiles_first"],
+        "stdout": completed.stdout.strip(),
+        "stderr": completed.stderr.strip(),
     }
+
+
+def _probe(url: str, timeout: float = 1.0) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return int(getattr(response, "status", 200)) < 400
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+def wait_for_services(max_seconds: int = 30) -> dict:
+    """Poll OSRM and tile endpoints until both are healthy or timeout.
+
+    Returns the final status plus how long it actually took. Useful as the
+    follow-up of bring_up_offline_stack so the operator knows whether the
+    services finished starting before any further action is taken.
+    """
+    osrm_url = "http://127.0.0.1:5000/nearest/v1/driving/51.4,35.7"
+    tile_url = "http://127.0.0.1:8080/styles.json"
+    started_at = time.monotonic()
+    deadline = started_at + max_seconds
+    osrm_up = False
+    tiles_up = False
+    while time.monotonic() < deadline:
+        if not osrm_up:
+            osrm_up = _probe(osrm_url)
+        if not tiles_up:
+            tiles_up = _probe(tile_url)
+        if osrm_up and tiles_up:
+            break
+        time.sleep(1)
+    return {
+        "osrm_up": osrm_up,
+        "tiles_up": tiles_up,
+        "elapsed_seconds": round(time.monotonic() - started_at, 1),
+        "timeout_seconds": max_seconds,
+    }
+
+
+def docker_ps_summary() -> str:
+    """Best-effort `docker ps` output for the bexlogix containers. Used by
+    the UI to show the operator which containers are actually running."""
+    if not is_docker_available():
+        return ""
+    try:
+        completed = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "-a",
+                "--filter",
+                "name=bexlogix-",
+                "--format",
+                "{{.Names}}\t{{.Status}}\t{{.Ports}}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return ""
+    return (completed.stdout or "").strip()

@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from client.components.tehran_overlay import get_minimal_background_geojson
 from server.app import config
 from server.app.services import routing_service, runtime_health_service
 
@@ -385,6 +386,9 @@ def _render_leaflet_map(
         "tile_enabled": bool(
             str(runtime_status.get("tile_url_template") or "").strip()
         ),
+        # FIX: Always include a minimal Tehran outline + district centroids so
+        # the operator has city context even when the tile server is down.
+        "background_overlay": get_minimal_background_geojson(),
     }
     payload_json = json.dumps(payload, ensure_ascii=False)
 
@@ -423,6 +427,44 @@ def _render_leaflet_map(
             // Keep route and markers visible even if tiles fail.
           }});
           tileLayer.addTo(map);
+        }}
+
+        // Minimal Tehran outline + district markers so the map is never a
+        // blank canvas when the tile server is down.
+        if (payload.background_overlay) {{
+          L.geoJSON(payload.background_overlay, {{
+            style: function(feature) {{
+              if (feature.properties && feature.properties.kind === "city_outline") {{
+                return {{
+                  color: "#94A3B8",
+                  weight: 2,
+                  opacity: 0.7,
+                  dashArray: "6 6",
+                  fill: false
+                }};
+              }}
+              return {{}};
+            }},
+            pointToLayer: function(feature, latlng) {{
+              return L.circleMarker(latlng, {{
+                radius: 3,
+                color: "#94A3B8",
+                weight: 1,
+                fillColor: "#CBD5E1",
+                fillOpacity: 0.6
+              }});
+            }},
+            onEachFeature: function(feature, layer) {{
+              const label = feature.properties && feature.properties.label;
+              if (label) {{
+                layer.bindTooltip(label, {{
+                  permanent: false,
+                  direction: "top",
+                  className: "bex-district-tooltip"
+                }});
+              }}
+            }}
+          }}).addTo(map);
         }}
 
         if (Array.isArray(payload.path) && payload.path.length > 1) {{

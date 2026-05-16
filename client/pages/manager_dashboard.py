@@ -96,14 +96,46 @@ def _render_offline_stack_starter(key_prefix: str) -> None:
         key=f"{key_prefix}_start_offline",
         help="docker compose up -d برای OSRM/VROOM/Tile",
     ):
-        with st.spinner("در حال بالا آوردن سرویس‌ها..."):
+        with st.spinner("در حال اجرای docker compose up -d ..."):
             result = offline_stack_service.bring_up_offline_stack()
-        if result["ok"]:
-            st.success(result["message"])
+
+        if not result["ok"]:
+            st.error(result["message"])
+            ps_output = offline_stack_service.docker_ps_summary()
+            if ps_output:
+                st.caption("وضعیت کانتینرها:")
+                st.code(ps_output, language="text")
+            return
+
+        st.info(result["message"])
+        if result.get("stderr"):
+            st.caption("خروجی docker compose:")
+            st.code(result["stderr"], language="text")
+
+        with st.spinner("در انتظار سبز شدن health-check (حداکثر ۴۵ ثانیه)..."):
+            health = offline_stack_service.wait_for_services(max_seconds=45)
+
+        ps_output = offline_stack_service.docker_ps_summary()
+        if health["osrm_up"] and health["tiles_up"]:
+            st.success(
+                f"OSRM و Tile در {health['elapsed_seconds']} ثانیه فعال شدند."
+            )
             runtime_health_service.get_offline_runtime_status(force_refresh=True)
             st.rerun()
         else:
-            st.error(result["message"])
+            messages = []
+            if not health["osrm_up"]:
+                messages.append("OSRM هنوز پاسخ نمی‌دهد (پورت 5000).")
+            if not health["tiles_up"]:
+                messages.append("Tile server هنوز پاسخ نمی‌دهد (پورت 8080).")
+            st.warning(
+                "کانتینرها اجرا شدند ولی همهٔ سرویس‌ها سبز نشدند: "
+                + " | ".join(messages)
+                + " می‌توانید چند ثانیهٔ دیگر صفحه را refresh کنید."
+            )
+            if ps_output:
+                st.caption("وضعیت کانتینرها:")
+                st.code(ps_output, language="text")
 
 
 @st.cache_data(ttl=300, show_spinner=False)

@@ -23,6 +23,7 @@ from server.app.services import (
     assignment_service,
     dashboard_query_service,
     import_service,
+    offline_stack_service,
     reporting_export_service,
     routing_service,
     runtime_health_service,
@@ -70,6 +71,38 @@ def _runtime_health_caption(runtime_state: dict[str, object]) -> str:
         f"پیش‌بررسی سرویس‌ها: OSRM={osrm_text} ({osrm_latency_text}) | "
         f"Tile={tiles_text} ({tiles_latency_text})"
     )
+
+
+def _render_offline_stack_starter(key_prefix: str) -> None:
+    """Render the "Start offline services" recovery button when OSRM or
+    Tile is down. The button shells out to ``docker compose up -d`` so the
+    operator can recover without dropping to a terminal."""
+    prereq = offline_stack_service.describe_prerequisites()
+    if not prereq["docker_available"]:
+        st.caption(
+            "برای روشن‌کردن خودکار سرویس‌های آفلاین، Docker Desktop باید نصب و در حال اجرا باشد."
+        )
+        return
+    if not prereq["osrm_graph_ready"]:
+        st.caption(
+            "گراف OSRM آماده نیست. ابتدا اسکریپت "
+            "`scripts/offline_prepare_osrm_tehran.ps1` را اجرا کنید."
+        )
+        return
+
+    if st.button(
+        "🟢 راه‌اندازی خودکار سرویس‌های آفلاین",
+        key=f"{key_prefix}_start_offline",
+        help="docker compose up -d برای OSRM/VROOM/Tile",
+    ):
+        with st.spinner("در حال بالا آوردن سرویس‌ها..."):
+            result = offline_stack_service.bring_up_offline_stack()
+        if result["ok"]:
+            st.success(result["message"])
+            runtime_health_service.get_offline_runtime_status(force_refresh=True)
+            st.rerun()
+        else:
+            st.error(result["message"])
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -290,6 +323,12 @@ def _run_apply_files_and_build_route(
                 if not bool(runtime_state.get("tiles_data_ready", False)):
                     st.info(
                         "فایل MBTiles پیدا نشد. مسیر مورد انتظار: offline/tiles/data/*.mbtiles"
+                    )
+                if (not bool(runtime_state.get("osrm_up", False))) or (
+                    not bool(runtime_state.get("tiles_up", False))
+                ):
+                    _render_offline_stack_starter(
+                        key_prefix=f"pipeline_starter_{work_date_iso}"
                     )
                 route_summary: dict
                 routes_precomputed = bool(draft_summary.get("routes_precomputed"))
@@ -839,12 +878,14 @@ def render_manager_dashboard(current_user: dict) -> None:
     visitor_options = _cached_visitor_options(work_date_iso)
     neu_section_header("نقشه مسیر")
     runtime_state = runtime_health_service.get_offline_runtime_status()
-    if (not bool(runtime_state.get("osrm_up", False))) or (
+    services_down = (not bool(runtime_state.get("osrm_up", False))) or (
         not bool(runtime_state.get("tiles_up", False))
-    ):
+    )
+    if services_down:
         st.info(
             "حالت کاهشی فعال است: اگر OSRM یا Tile در دسترس نباشد، نقشه مینیمال سریع نمایش داده می‌شود."
         )
+        _render_offline_stack_starter(key_prefix=f"map_starter_{work_date_iso}")
     if not bool(runtime_state.get("osrm_data_ready", False)):
         st.warning("فایل داده OSRM پیدا نشد (offline/osrm/data/tehran-latest.osrm).")
     if not bool(runtime_state.get("tiles_data_ready", False)):

@@ -29,12 +29,19 @@ BexLogix is an offline-first Streamlit application for field-sales operations.
    - `pip install -r requirements.txt`
 2. Prepare OSRM graph once:
    - `./scripts/offline_prepare_osrm_tehran.ps1`
-3. Start local offline stack (OSRM + VROOM + tiles):
-   - `./scripts/offline_up.ps1`
-4. Run app:
-   - `streamlit run client/streamlit_app.py`
-5. For full deployment and recovery guide:
-   - See `DEPLOY.md`
+3. Launch everything in one command:
+   - `python scripts/run.py`
+
+The launcher brings up the offline Docker stack (OSRM + VROOM + tiles)
+if Docker is available, waits for the services to become healthy, and
+then starts the Streamlit UI. Pass `--no-docker` to skip the stack and
+rely on the nearest-neighbor fallback.
+
+If you prefer the legacy two-step flow:
+1. `./scripts/offline_up.ps1`
+2. `streamlit run client/streamlit_app.py`
+
+For full deployment and recovery guide, see `DEPLOY.md`.
 
 ## Notes
 - The app is designed to run with no external internet dependency at runtime.

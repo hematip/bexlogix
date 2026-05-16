@@ -9,6 +9,11 @@ from random import Random
 
 import pandas as pd
 
+from server.app.utils.tehran_geo import (
+    REGION_TO_DISTRICTS,
+    TEHRAN_DISTRICT_CENTROIDS,
+)
+
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 USERS_SAMPLE_PATH = DATA_DIR / "login.xlsx"
@@ -40,9 +45,21 @@ def _build_users() -> pd.DataFrame:
 
 # Contract: _build_stores executes one deterministic step in the workflow.
 def _build_stores() -> pd.DataFrame:
+    """Generate STORE_COUNT stores anchored on real Tehran district centroids.
+
+    Each store is placed within ~1 km of a district centroid (gaussian jitter)
+    so the dataset stays inside Tehran's populated area instead of falling on
+    mountains or the bare bounding box edges. Stores rotate through the five
+    business regions and five grades to keep the per-region/per-grade balance
+    the integrity tests rely on.
+    """
     rng = Random(20260401)
-    regions = ["مرکز", "شمال", "جنوب", "شرق", "غرب"]
+    regions = list(REGION_TO_DISTRICTS.keys())
     grades = ["VIP", "A+", "A", "B", "C"]
+
+    # ~1 km gaussian jitter — std dev expressed in degrees.
+    JITTER_LAT_DEG = 0.008
+    JITTER_LON_DEG = 0.010
 
     rows: list[dict] = []
     for index in range(1, STORE_COUNT + 1):
@@ -52,14 +69,22 @@ def _build_stores() -> pd.DataFrame:
         if not (has_confectionery or has_oil or has_pasta):
             has_confectionery = True
 
+        region = regions[(index - 1) % len(regions)]
+        candidate_districts = REGION_TO_DISTRICTS[region]
+        district_id = candidate_districts[(index - 1) % len(candidate_districts)]
+        centroid_lat, centroid_lon = TEHRAN_DISTRICT_CENTROIDS[district_id]
+
+        lat = centroid_lat + rng.gauss(0.0, JITTER_LAT_DEG)
+        lon = centroid_lon + rng.gauss(0.0, JITTER_LON_DEG)
+
         rows.append(
             {
                 "store_code": f"STR-{index:03d}",
                 "store_name": f"Zar Store {index:03d}",
-                "region": regions[(index - 1) % len(regions)],
-                "address": f"تهران، منطقه {(index % 22) + 1}، خیابان نمونه {index}",
-                "lat": round(35.58 + rng.random() * 0.28, 6),
-                "lon": round(51.20 + rng.random() * 0.42, 6),
+                "region": region,
+                "address": f"تهران، منطقه {district_id}، خیابان نمونه {index}",
+                "lat": round(lat, 6),
+                "lon": round(lon, 6),
                 "grade": grades[(index - 1) % len(grades)],
                 "has_confectionery": has_confectionery,
                 "has_oil": has_oil,
@@ -72,16 +97,28 @@ def _build_stores() -> pd.DataFrame:
 
 # Contract: _build_daily_status executes one deterministic step in the workflow.
 def _build_daily_status(work_date_iso: str) -> pd.DataFrame:
+    """Place each of the VISITOR_COUNT visitors at a different Tehran
+    district so their start points are spread across the city.
+
+    Spreading start points across the city is what lets the territory
+    clustering produce naturally compact per-visitor tours; if every
+    visitor starts from the same spot, the only way to cover the city
+    is for someone to drive a long way.
+    """
+    # Pick visually well-spread districts as seed start points.
+    SEED_DISTRICT_IDS = [1, 5, 8, 22, 6, 11, 17, 20, 15, 14]
     rows: list[dict] = []
     for index in range(1, VISITOR_COUNT + 1):
+        district_id = SEED_DISTRICT_IDS[(index - 1) % len(SEED_DISTRICT_IDS)]
+        start_lat, start_lon = TEHRAN_DISTRICT_CENTROIDS[district_id]
         rows.append(
             {
                 "work_date": work_date_iso,
                 "username": f"visitor{index}",
                 "visitor_code": f"VIS-{index:03d}",
                 "full_name": f"ویزیتور {index:02d}",
-                "start_lat": round(35.66 + (index * 0.01), 6),
-                "start_lon": round(51.32 + (index * 0.01), 6),
+                "start_lat": round(start_lat, 6),
+                "start_lon": round(start_lon, 6),
                 "capacity": 30,
                 "is_active_today": True,
             }

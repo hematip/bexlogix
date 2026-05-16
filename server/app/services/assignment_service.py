@@ -28,7 +28,7 @@ from server.app.repositories import (
     visit_repository,
     visitor_repository,
 )
-from server.app.services import routing_service, scheduling_service
+from server.app.services import routing_service, scheduling_service, territory_service
 from server.app.utils.geo import haversine_km
 
 logger = logging.getLogger(__name__)
@@ -242,6 +242,36 @@ def _geo_capacity_allocate_stores(
     return allocations
 
 
+def _territory_cluster_allocate_stores(
+    visitors: list[dict], due_stores: list[Store]
+) -> dict[int, list[Store]]:
+    """Pre-cluster due stores into per-visitor territories using capacitated
+    k-means, then route each visitor's small cluster independently.
+
+    Replaces the global VROOM call when ROUTING_USE_TERRITORY_CLUSTERING is
+    on. Output is the same shape as _geo_capacity_allocate_stores so the
+    caller can downstream-route uniformly.
+    """
+    allocations: dict[int, list[Store]] = {int(v["visitor_id"]): [] for v in visitors}
+    if not visitors or not due_stores:
+        return allocations
+
+    store_by_id = {int(s.id): s for s in due_stores}
+    cluster_input_stores = [
+        {"store_id": int(s.id), "lat": float(s.lat), "lon": float(s.lon)}
+        for s in due_stores
+    ]
+    territories = territory_service.cluster_stores_to_visitors(
+        visitors=visitors, stores=cluster_input_stores
+    )
+    for t in territories:
+        ordered_store_ids = list(t.store_ids)
+        allocations[int(t.visitor_id)] = [
+            store_by_id[sid] for sid in ordered_store_ids if sid in store_by_id
+        ]
+    return allocations
+
+
 # Contract: generate_draft_assignments executes one deterministic step in the workflow.
 def generate_draft_assignments(
     db: Session,
@@ -296,8 +326,19 @@ def generate_draft_assignments(
         for store in due_stores
     ]
 
+    use_territory_clustering = bool(
+        getattr(config, "ROUTING_USE_TERRITORY_CLUSTERING", False)
+        and visitors
+        and due_stores
+    )
+
     vroom_result: routing_service.UnifiedRouteResult | None = None
-    if solver_mode_config in {"auto", "vroom"} and visitors and due_stores:
+    if (
+        not use_territory_clustering
+        and solver_mode_config in {"auto", "vroom"}
+        and visitors
+        and due_stores
+    ):
         vroom_result = routing_service.solve_day_assignments_with_vroom(
             visitors=visitors,
             stores=solver_store_rows,
@@ -314,8 +355,111 @@ def generate_draft_assignments(
     solver_reason = None
     route_summary: dict | None = None
 
-    use_vroom_output = bool(vroom_result and vroom_result.solver_mode == "vroom")
-    if use_vroom_output:
+    use_vroom_output = bool(
+        not use_territory_clustering
+        and vroom_result
+        and vroom_result.solver_mode == "vroom"
+    )
+
+    if use_territory_clustering:
+        allocations = _territory_cluster_allocate_stores(
+            visitors=visitors, due_stores=due_stores
+        )
+        planner = routing_service.OSRMRoutePlanner()
+        osrm_routed = 0
+        nn_routed = 0
+        fallback_reason_counts = {
+            "osrm_unavailable": 0,
+            "osrm_timeout": 0,
+            "osrm_invalid_response": 0,
+        }
+        try:
+            for visitor in visitors:
+                visitor_id = int(visitor["visitor_id"])
+                visitor_stores = allocations.get(visitor_id, [])
+                if not visitor_stores:
+                    continue
+                stops = [
+                    {
+                        "assignment_id": i + 1,
+                        "store_id": int(store.id),
+                        "store_code": str(store.store_code),
+                        "lat": float(store.lat),
+                        "lon": float(store.lon),
+                    }
+                    for i, store in enumerate(visitor_stores)
+                ]
+                planned_stops = planner.plan_route(
+                    start_lat=visitor.get("start_lat"),
+                    start_lon=visitor.get("start_lon"),
+                    stops=stops,
+                )
+                # Map planning result back to store_id via the temp assignment_id.
+                store_by_temp_id = {s["assignment_id"]: s for s in stops}
+                planned_by_temp_id = {p.assignment_id: p for p in planned_stops}
+
+                for temp_id in sorted(store_by_temp_id.keys()):
+                    p = planned_by_temp_id.get(temp_id)
+                    if p is None:
+                        continue
+                    stop = store_by_temp_id[temp_id]
+                    db.add(
+                        DailyAssignment(
+                            work_date=work_date,
+                            visitor_id=visitor_id,
+                            store_id=int(stop["store_id"]),
+                            route_order=int(p.route_order),
+                            route_distance_km=p.route_distance_km,
+                            assignment_status=AssignmentStatus.DRAFT.value,
+                            generated_by=manager_user_id,
+                        )
+                    )
+                    assigned_store_ids.add(int(stop["store_id"]))
+                    created_count += 1
+
+                mode = str(getattr(planner, "last_plan_mode", "nn"))
+                if mode == "osrm":
+                    osrm_routed += 1
+                else:
+                    nn_routed += 1
+                    reason = getattr(planner, "last_fallback_reason", None)
+                    if reason in fallback_reason_counts:
+                        fallback_reason_counts[reason] += 1
+                    elif reason:
+                        fallback_reason_counts["osrm_invalid_response"] += 1
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        unassigned_store_ids = [
+            int(s.id) for s in due_stores if int(s.id) not in assigned_store_ids
+        ]
+        solver_mode = "territory+osrm" if osrm_routed > 0 else "territory+nn"
+        routes_precomputed = True
+        if nn_routed > 0:
+            fallback_stage = "osrm_to_nn"
+            solver_reason = max(
+                fallback_reason_counts.items(), key=lambda item: item[1]
+            )[0]
+            if fallback_reason_counts.get(solver_reason, 0) <= 0:
+                solver_reason = None
+        route_summary = {
+            "total_assignments": int(created_count),
+            "total_visitors": int(len(visitors)),
+            "osrm_routed": int(osrm_routed),
+            "nn_routed": int(nn_routed),
+            "vroom_routed": 0,
+            "vroom_used": False,
+            "osrm_used": bool(osrm_routed > 0),
+            "solver_mode": solver_mode,
+            "fallback_stage": fallback_stage,
+            "solver_reason": solver_reason,
+            "fallback_reason": solver_reason,
+            "fallback_reason_counts": fallback_reason_counts,
+            "clustering": "capacitated_kmeans",
+        }
+    elif use_vroom_output:
         solver_mode = "vroom"
         routes_precomputed = True
         visitor_by_id = {int(visitor["visitor_id"]): visitor for visitor in visitors}

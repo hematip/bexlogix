@@ -80,7 +80,16 @@ if ROUTING_SOLVER_MODE not in {"legacy", "vroom", "auto"}:
     ROUTING_SOLVER_MODE = "auto"
 
 # Shadow mode computes VROOM output for comparison but keeps legacy as source of truth.
+# Retained for backward compatibility; the dead code path was removed.
 ROUTING_SHADOW_MODE = _to_bool(os.getenv("ROUTING_SHADOW_MODE"), False)
+
+# Cluster due stores into geographic territories per visitor before routing.
+# This produces visually compact per-visitor tours even when visitor start
+# points are close to each other (the global VRP can otherwise sprawl tours
+# across the whole city). Strongly recommended when start points cluster.
+ROUTING_USE_TERRITORY_CLUSTERING = _to_bool(
+    os.getenv("ROUTING_USE_TERRITORY_CLUSTERING"), True
+)
 
 # Preferred map render engine for offline vector/raster pipelines.
 # Allowed: auto | leaflet_minimal | maplibre_vector

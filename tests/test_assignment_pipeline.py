@@ -208,6 +208,134 @@ class TestVisitSubmissionConcurrency:
             )
 
 
+class TestTerritoryClusteringPipeline:
+    def test_clustered_pipeline_produces_balanced_compact_routes(
+        self, db_session, monkeypatch
+    ):
+        """When territory clustering is enabled, the pipeline must partition
+        stores into per-visitor clusters that are tighter than the full
+        store extent."""
+        from server.app import config as app_config
+        # OSRM is not available in tests; the planner falls back to NN
+        # which is what we want for the territorial path here.
+        monkeypatch.setattr(
+            app_config, "ROUTING_USE_TERRITORY_CLUSTERING", True, raising=False
+        )
+        monkeypatch.setattr(
+            app_config, "ROUTING_SOLVER_MODE", "legacy", raising=False
+        )
+
+        # Seed: 5 visitors tightly clustered, 25 stores spread wide.
+        manager = User(username="m1", password_hash="x", role="manager", is_active=True)
+        db_session.add(manager)
+        db_session.flush()
+
+        visitor_ids: list[int] = []
+        for i in range(5):
+            u = User(username=f"v{i}", password_hash="x", role="visitor", is_active=True)
+            db_session.add(u)
+            db_session.flush()
+            # All five visitor starts in a 0.5x0.5 km square.
+            p = VisitorProfile(
+                user_id=u.id,
+                visitor_code=f"VIS-{i:03d}",
+                full_name=f"V{i}",
+                default_start_lat=35.700 + 0.001 * i,
+                default_start_lon=51.350 + 0.001 * i,
+                default_capacity=5,
+                is_active=True,
+            )
+            db_session.add(p)
+            db_session.flush()
+            db_session.add(DailyVisitorStatus(
+                visitor_id=p.id,
+                work_date=WORK_DATE,
+                start_lat=p.default_start_lat,
+                start_lon=p.default_start_lon,
+                capacity=5,
+                is_active_today=True,
+            ))
+            visitor_ids.append(p.id)
+
+        # 25 stores spread across a 0.30 x 0.40 degree window (≈30 km).
+        import random
+        rng = random.Random(7)
+        store_ids: list[int] = []
+        for i in range(25):
+            s = Store(
+                store_code=f"STR-{i:03d}",
+                store_name=f"S{i}",
+                region="مرکز",
+                lat=35.55 + rng.random() * 0.30,
+                lon=51.20 + rng.random() * 0.40,
+                grade="A+",
+                has_confectionery=True,
+                has_oil=False,
+                has_pasta=False,
+            )
+            db_session.add(s)
+            db_session.flush()
+            store_ids.append(s.id)
+        db_session.commit()
+
+        result = assignment_service.generate_draft_assignments(
+            db=db_session, work_date=WORK_DATE, manager_user_id=manager.id
+        )
+
+        # Solver mode should reflect the territorial path.
+        assert result["solver_mode"].startswith("territory")
+        assert result["created_assignments"] == 25
+        assert result["unassigned_due_stores"] == 0
+
+        # Each visitor receives exactly capacity (=5) stores.
+        from server.app.models.daily_assignment import DailyAssignment
+        from collections import Counter
+        rows = db_session.query(DailyAssignment).filter(
+            DailyAssignment.work_date == WORK_DATE
+        ).all()
+        counts = Counter(r.visitor_id for r in rows)
+        assert all(c == 5 for c in counts.values()), f"counts not balanced: {counts}"
+
+        # No store is double-assigned (unique constraint).
+        assert len({r.store_id for r in rows}) == 25
+
+        # route_order must be set per visitor (1..n contiguous).
+        from server.app.models.store import Store as StoreModel
+        for visitor_id in visitor_ids:
+            v_rows = [r for r in rows if r.visitor_id == visitor_id]
+            orders = sorted(r.route_order for r in v_rows)
+            assert orders == list(range(1, len(orders) + 1)), (
+                f"route_order not contiguous for visitor {visitor_id}: {orders}"
+            )
+
+        # Compactness check: per-visitor centroid → farthest stop distance.
+        from server.app.utils.geo import haversine_km
+        stores_by_id = {s.id: s for s in db_session.query(StoreModel).all()}
+        radii = []
+        for visitor_id in visitor_ids:
+            v_rows = [r for r in rows if r.visitor_id == visitor_id]
+            if not v_rows:
+                continue
+            centroid_lat = sum(stores_by_id[r.store_id].lat for r in v_rows) / len(v_rows)
+            centroid_lon = sum(stores_by_id[r.store_id].lon for r in v_rows) / len(v_rows)
+            radius = max(
+                haversine_km(
+                    centroid_lat, centroid_lon,
+                    stores_by_id[r.store_id].lat,
+                    stores_by_id[r.store_id].lon,
+                )
+                for r in v_rows
+            )
+            radii.append(radius)
+        mean_radius = sum(radii) / len(radii)
+        # Territory means each visitor's tour stays in a much smaller area
+        # than the full 30 km city extent.
+        assert mean_radius < 20.0, (
+            f"mean per-visitor radius {mean_radius:.1f}km — territory not "
+            f"effective; expected < 20km for 5 clusters in a 30km extent"
+        )
+
+
 class TestBatchedRebuild:
     def test_flush_recomputes_schedule_state_for_all_affected_stores(
         self, db_session, monkeypatch

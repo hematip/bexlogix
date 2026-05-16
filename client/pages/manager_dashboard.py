@@ -318,12 +318,21 @@ def _run_apply_files_and_build_route(
                         draft_summary.get("solver_reason"),
                     )
                     route_summary.setdefault("fallback_reason", None)
-                    _set_step(
-                        "route",
-                        "done",
-                        "مسیرها با VROOM+OSRM آفلاین ساخته شدند.",
-                        mark_complete=True,
-                    )
+                    solver_mode_label = str(route_summary.get("solver_mode") or "")
+                    if solver_mode_label.startswith("territory"):
+                        if "osrm" in solver_mode_label:
+                            route_message = (
+                                "مسیرها با پهنه‌بندی جغرافیایی + OSRM آفلاین ساخته شدند."
+                            )
+                        else:
+                            route_message = (
+                                "مسیرها با پهنه‌بندی جغرافیایی + الگوریتم پشتیبان ساخته شدند."
+                            )
+                    elif solver_mode_label == "vroom":
+                        route_message = "مسیرها با VROOM+OSRM آفلاین ساخته شدند."
+                    else:
+                        route_message = "مسیرها بر اساس برنامه‌ریز پیش‌فرض ساخته شدند."
+                    _set_step("route", "done", route_message, mark_complete=True)
                 else:
                     if runtime_state.get("osrm_up", False):
                         route_planner = routing_service.OSRMRoutePlanner(

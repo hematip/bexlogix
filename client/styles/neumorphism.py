@@ -789,6 +789,55 @@ div.stDownloadButton > button {{
     color: var(--bex-text-primary) !important;
 }}
 
+@media (min-width: 768px) {{
+    div.stButton,
+    div.stFormSubmitButton,
+    [data-testid="stDownloadButton"] {{
+        display: flex !important;
+        justify-content: flex-start !important;
+        flex-wrap: nowrap !important;
+        width: 100% !important;
+    }}
+
+    [data-testid^="stBaseButton"],
+    [data-testid="stDownloadButton"] button {{
+        width: auto !important;
+        min-width: 140px !important;
+        max-width: 320px !important;
+        flex: 0 1 auto !important;
+        white-space: nowrap !important;
+    }}
+
+    div[class*="st-key-build_pipeline_"] div.stButton,
+    div[class*="st-key-build_pipeline_"] [data-testid^="stBaseButton"] {{
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: none !important;
+        flex-basis: 100% !important;
+    }}
+}}
+
+@media (max-width: 767px) {{
+    div.stButton,
+    div.stFormSubmitButton,
+    [data-testid="stDownloadButton"],
+    div.st-key-user_menu_trigger {{
+        display: flex !important;
+        justify-content: stretch !important;
+        width: 100% !important;
+        max-width: none !important;
+    }}
+
+    [data-testid^="stBaseButton"],
+    [data-testid="stDownloadButton"] button {{
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        min-height: 44px !important;
+        flex: 1 1 100% !important;
+    }}
+}}
+
 div[data-baseweb="input"] > div,
 div[data-baseweb="select"] > div,
 div[data-baseweb="textarea"] > div,

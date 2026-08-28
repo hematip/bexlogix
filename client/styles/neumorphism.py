@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import base64
+import html
 from pathlib import Path
 
 import streamlit as st
@@ -79,6 +80,9 @@ def _build_global_css() -> str:
     --bex-text-secondary: {TEXT_SECONDARY};
     --bex-accent: {ACCENT};
     --bex-danger: #721c24;
+    --bex-login-shell-max: 36rem; /* Bextudio maxWidth/xl: 576px. */
+    --bex-login-card-padding: 1.5rem; /* Bextudio spacing/6: 24px. */
+    --bex-login-logo-max: 15rem;
 }}
 
 html,
@@ -178,79 +182,298 @@ section[data-testid="stSidebar"],
     text-align: right;
 }}
 
-.date-input-label {{
-    margin: 0.2rem 0 0.35rem;
-    font-size: 1.55rem;
-    font-weight: 700;
-    color: var(--bex-text-primary);
-    text-align: right;
-}}
-
 .jalali-selected-caption {{
-    margin: 0.25rem 0 0.65rem;
+    margin: 0;
     color: var(--bex-text-secondary);
     font-size: 0.95rem;
-    line-height: 1.7;
+    line-height: 1.45;
     text-align: right !important;
     direction: rtl !important;
+    unicode-bidi: plaintext !important;
+    overflow-wrap: anywhere;
 }}
 
-/* FIX: Keep today's shortcut compact and aligned to the right side. */
+/* FIX: Keep the selected date and today's shortcut as one compact, right-aligned row. */
+[data-testid="stHorizontalBlock"]:has(.jalali-selected-caption) {{
+    align-items: center !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    gap: 0.5rem !important;
+    margin: 0 0 0.2rem !important;
+}}
+[data-testid="stHorizontalBlock"]:has(.jalali-selected-caption) > [data-testid="stColumn"]:first-child {{
+    flex: 0 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}}
+[data-testid="stHorizontalBlock"]:has(.jalali-selected-caption) > [data-testid="stColumn"]:last-child {{
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}}
 div[class*="st-key-"][class*="_today_shortcut"] {{
     display: flex !important;
-    justify-content: flex-end !important;
+    justify-content: flex-start !important;
 }}
 div[class*="st-key-"][class*="_today_shortcut"] > div {{
     width: auto !important;
 }}
 div[class*="st-key-"][class*="_today_shortcut"] button {{
     width: auto !important;
-    min-width: 118px !important;
-    padding-left: 0.9rem !important;
-    padding-right: 0.9rem !important;
+    min-width: 96px !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
 }}
 
-.app-user-mini {{
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.3rem;
-    background: var(--bex-bg);
-    border-radius: 12px;
-    padding: 0.45rem 0.5rem;
-    box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light);
-    margin-top: 0;
-    margin-bottom: 0.45rem;
+div.st-key-app_header_row {{
     width: 100%;
-    min-width: 140px;
     max-width: 100%;
+    border-bottom: 1px solid var(--bex-shadow-dark);
     box-sizing: border-box;
 }}
 
-.app-user-shell {{
-    width: 100%;
-    max-width: 100%;
+div.st-key-app_header_row [data-testid="stHorizontalBlock"] {{
+    display: grid !important;
+    grid-template-columns: minmax(0, 4.2fr) minmax(0, 4.8fr) max-content;
+    align-items: center !important;
+    gap: 0.75rem !important;
+    min-height: 64px;
+    padding-inline: 0;
+}}
+
+div.st-key-app_header_row [data-testid="stColumn"] {{
+    width: auto !important;
+    min-width: 0 !important;
+    flex: none !important;
+}}
+
+.app-header-brand {{
     display: flex;
-    direction: ltr;
-    justify-content: flex-start;
+    align-items: center;
+    gap: 0;
+    min-width: 0;
 }}
 
-.topbar-spacer {{
-    height: 0.1rem;
+.app-header-brand-mark {{
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    margin-inline-end: 12px;
 }}
 
-.app-user-mini-name {{
-    font-size: 0.85rem;
+.app-header-brand-mark img {{
+    display: block;
+    width: auto !important;
+    height: auto !important;
+    max-width: 100% !important;
+    max-height: 40px !important;
+}}
+
+.app-header-separator {{
+    width: 1px;
+    height: 20px;
+    flex: 0 0 1px;
+    margin-inline-end: 12px;
+    background: var(--bex-shadow-dark);
+}}
+
+.app-header-title {{
+    min-width: 0;
+    color: var(--bex-text-primary);
+    font-size: 1.15rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}}
+
+.app-header-center {{
+    min-height: 1px;
+}}
+
+.app-user-menu-identity {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 0.15rem 0.1rem 0.25rem;
+}}
+
+.app-user-menu-name {{
+    min-width: 0;
+    overflow: hidden;
+    color: var(--bex-text-primary);
+    font-size: 0.9rem;
     font-weight: 700;
-    line-height: 1.1;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }}
 
-.st-key-logout_topbar button {{
-    width: 100% !important;
-    min-width: 140px !important;
+.app-user-menu-divider {{
+    height: 1px;
+    margin: 0.4rem 0 0.3rem;
+    background: var(--bex-shadow-dark);
+}}
+
+div.st-key-user_menu_trigger {{
+    display: flex !important;
+    justify-content: flex-end !important;
+    width: max-content !important;
+    max-width: 100% !important;
+}}
+
+div.st-key-user_menu_trigger button {{
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 32px !important;
+    height: 32px !important;
+    padding: 0.2rem 0.6rem !important;
     margin: 0 !important;
     box-sizing: border-box !important;
+    border: 1px solid var(--bex-shadow-dark) !important;
+    border-radius: 10px !important;
+    background: var(--bex-bg) !important;
+    color: var(--bex-text-primary) !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+}}
+
+div.st-key-user_menu_trigger button:hover {{
+    background: var(--bex-surface) !important;
+    border-color: var(--bex-text-secondary) !important;
+}}
+
+div.st-key-user_menu_trigger button [data-testid="stMarkdownContainer"] p {{
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    direction: rtl;
+    unicode-bidi: isolate;
+    color: var(--bex-text-primary) !important;
+    font-size: 0.86rem;
+    line-height: 1;
+}}
+
+div.st-key-user_menu_trigger button code {{
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 0.12rem 0.45rem;
+    border: 1px solid var(--bex-shadow-dark);
+    border-radius: 999px;
+    background: var(--bex-surface);
+    color: var(--bex-text-secondary);
+    font-family: inherit !important;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}}
+
+div.st-key-user_menu_trigger span.material-icons,
+div.st-key-user_menu_trigger span.material-symbols-rounded,
+div.st-key-user_menu_trigger [data-testid="stIconMaterial"] {{
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 1rem !important;
+    height: 1rem !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+}}
+
+div.st-key-user_menu_trigger span.material-icons::before,
+div.st-key-user_menu_trigger span.material-symbols-rounded::before,
+div.st-key-user_menu_trigger [data-testid="stIconMaterial"]::before {{
+    content: "▾";
+    color: var(--bex-text-secondary);
+    font-size: 0.8rem;
+    line-height: 1;
+}}
+
+div.st-key-user_menu_trigger button[aria-expanded="true"] span.material-icons::before,
+div.st-key-user_menu_trigger button[aria-expanded="true"] span.material-symbols-rounded::before,
+div.st-key-user_menu_trigger button[aria-expanded="true"] [data-testid="stIconMaterial"]::before {{
+    content: "▴";
+}}
+
+[data-baseweb="popover"]:has(.app-user-menu-identity) {{
+    min-width: 14rem;
+    direction: rtl !important;
+    text-align: right !important;
+}}
+
+div.st-key-user_menu_logout button {{
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 0.45rem 0.65rem !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    color: var(--bex-danger) !important;
+    box-shadow: none !important;
+    justify-content: flex-start !important;
+}}
+
+div.st-key-user_menu_logout button:hover {{
+    background: var(--bex-surface) !important;
+}}
+
+div.st-key-user_menu_logout button > div {{
+    width: 100%;
+    justify-content: flex-start !important;
+}}
+
+div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] {{
+    width: 100%;
+}}
+
+div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
+    color: var(--bex-danger) !important;
+    text-align: right !important;
+}}
+
+@media (max-width: 767px) {{
+    div.st-key-app_header_row [data-testid="stHorizontalBlock"] {{
+        grid-template-columns: minmax(0, 1fr);
+        min-height: auto;
+        padding-block: 0.65rem;
+        row-gap: 0.55rem !important;
+    }}
+
+    div.st-key-app_header_row [data-testid="stColumn"]:nth-child(1) {{
+        grid-column: 1 / -1;
+    }}
+
+    div.st-key-app_header_row [data-testid="stColumn"]:nth-child(2) {{
+        display: none !important;
+    }}
+
+    div.st-key-app_header_row [data-testid="stColumn"]:nth-child(3) {{
+        grid-column: 1 / -1;
+        display: flex !important;
+        justify-content: flex-end !important;
+    }}
+
+    .app-header-brand {{
+        width: 100%;
+    }}
+
+    .app-header-title {{
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+
+    div.st-key-user_menu_trigger button {{
+        min-height: 44px !important;
+        height: 44px !important;
+    }}
+
+    div.st-key-user_menu_trigger {{
+        width: auto !important;
+    }}
 }}
 
 .main-logo,
@@ -280,9 +503,46 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
     height: auto;
 }}
 
+.login-logo-shell {{
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+}}
+
+.login-logo img {{
+    max-width: var(--bex-login-logo-max) !important;
+}}
+
 .login-title-block {{
     text-align: center;
     margin-bottom: 0.9rem;
+}}
+
+[data-testid="stMainBlockContainer"]:has(.login-title-block) {{
+    width: 100% !important;
+    max-width: var(--bex-login-shell-max) !important;
+    margin-inline: auto !important;
+    box-sizing: border-box !important;
+}}
+
+[data-testid="stMainBlockContainer"]:has(.login-title-block) [data-testid="stForm"] {{
+    padding: var(--bex-login-card-padding) !important;
+    box-sizing: border-box !important;
+}}
+
+[data-testid="stMainBlockContainer"]:has(.login-title-block) div.stFormSubmitButton {{
+    display: flex !important;
+    justify-content: stretch !important;
+    width: 100% !important;
+}}
+
+[data-testid="stMainBlockContainer"]:has(.login-title-block)
+    div.stFormSubmitButton > [data-testid^="stBaseButton"] {{
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: none !important;
+    flex-basis: 100% !important;
 }}
 
 .login-title-main {{
@@ -524,18 +784,37 @@ div.stButton > button {{
 
 div.stFormSubmitButton > button {{
     background: var(--bex-accent) !important;
-    color: #fff !important;
+    color: #ffffff !important;
     padding: 0.55rem 2rem !important;
 }}
 
-button[data-testid*="primary"] {{
+div.stButton > button[data-testid*="primary"],
+div.stButton > button[data-testid*="primary"]:hover,
+div.stButton > button[data-testid*="primary"]:focus-visible,
+div.stButton > button[data-testid*="primary"]:disabled,
+div.stFormSubmitButton > button[data-testid*="primary"],
+div.stFormSubmitButton > button[data-testid*="primary"]:hover,
+div.stFormSubmitButton > button[data-testid*="primary"]:focus-visible,
+div.stFormSubmitButton > button[data-testid*="primary"]:disabled {{
     background: var(--bex-accent) !important;
     border-color: var(--bex-accent) !important;
-    color: #fff !important;
+    color: #ffffff !important;
 }}
 
-button[data-testid*="primary"] * {{
-    color: #fff !important;
+div.stButton > button[data-testid*="primary"] :is(p, [data-testid="stMarkdownContainer"] p),
+div.stButton > button[data-testid*="primary"]:hover :is(p, [data-testid="stMarkdownContainer"] p),
+div.stButton > button[data-testid*="primary"]:focus-visible :is(p, [data-testid="stMarkdownContainer"] p),
+div.stButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"] :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"]:hover :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"]:focus-visible :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p) {{
+    color: #ffffff !important;
+}}
+
+div.stButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p) {{
+    opacity: 0.75;
 }}
 
 div[class*="st-key-flush_"] button {{
@@ -550,6 +829,55 @@ div.stDownloadButton > button {{
     color: var(--bex-text-primary) !important;
 }}
 
+@media (min-width: 768px) {{
+    div.stButton,
+    div.stFormSubmitButton,
+    [data-testid="stDownloadButton"] {{
+        display: flex !important;
+        justify-content: flex-start !important;
+        flex-wrap: nowrap !important;
+        width: 100% !important;
+    }}
+
+    [data-testid^="stBaseButton"],
+    [data-testid="stDownloadButton"] button {{
+        width: auto !important;
+        min-width: 140px !important;
+        max-width: 320px !important;
+        flex: 0 1 auto !important;
+        white-space: nowrap !important;
+    }}
+
+    div[class*="st-key-build_pipeline_"] div.stButton,
+    div[class*="st-key-build_pipeline_"] [data-testid^="stBaseButton"] {{
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: none !important;
+        flex-basis: 100% !important;
+    }}
+}}
+
+@media (max-width: 767px) {{
+    div.stButton,
+    div.stFormSubmitButton,
+    [data-testid="stDownloadButton"],
+    div.st-key-user_menu_trigger {{
+        display: flex !important;
+        justify-content: stretch !important;
+        width: 100% !important;
+        max-width: none !important;
+    }}
+
+    [data-testid^="stBaseButton"],
+    [data-testid="stDownloadButton"] button {{
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        min-height: 44px !important;
+        flex: 1 1 100% !important;
+    }}
+}}
+
 div[data-baseweb="input"] > div,
 div[data-baseweb="select"] > div,
 div[data-baseweb="textarea"] > div,
@@ -562,7 +890,11 @@ input[type="date"] {{
     background: var(--bex-bg) !important;
 }}
 
-button:focus-visible,
+div.stButton > button:focus-visible,
+div.stFormSubmitButton > button:focus-visible,
+div.stDownloadButton > button:focus-visible,
+div.st-key-user_menu_trigger button:focus-visible,
+div.st-key-user_menu_logout button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 [data-baseweb="select"] > div:focus-within,
@@ -799,6 +1131,52 @@ def render_login_logo() -> None:
         st.markdown(
             f'<div class="login-logo"><div class="login-logo-shell">{tag}</div></div>',
             unsafe_allow_html=True,
+        )
+
+
+def render_dashboard_header(current_user: dict, title: str):
+    logo_tag = _logo_img_tag(max_width=160)
+    safe_title = html.escape(str(title or ""))
+    safe_username = html.escape(str(current_user.get("username") or ""))
+    normalized_role = str(current_user.get("role") or "").strip().lower()
+    safe_role_label = html.escape(str(_ROLE_DISPLAY.get(normalized_role, normalized_role)))
+    role_badge = role_badge_html(normalized_role)
+    brand_html = f'<span class="app-header-brand-mark">{logo_tag}</span>' if logo_tag else ""
+
+    brand_col, center_col, user_menu_col = st.columns(
+        [4.2, 4.8, 1.8],
+        gap="small",
+    )
+    with brand_col:
+        st.markdown(
+            f'<div class="app-header-brand">{brand_html}'
+            f'<span class="app-header-separator" aria-hidden="true"></span>'
+            f'<span class="app-header-title">{safe_title}</span></div>',
+            unsafe_allow_html=True,
+        )
+    with center_col:
+        st.markdown('<div class="app-header-center" aria-hidden="true"></div>', unsafe_allow_html=True)
+    with user_menu_col:
+        user_menu = st.popover(
+            f"\u2066{safe_username}\u2069  `{safe_role_label}`",
+            key="user_menu_trigger",
+            type="secondary",
+            width="content",
+            wrap=False,
+        )
+    with user_menu:
+        st.markdown(
+            f'<div class="app-user-menu-identity"><span class="app-user-menu-name ltr-inline" '
+            f'dir="ltr">{safe_username}</span>'
+            f'{role_badge}</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="app-user-menu-divider" aria-hidden="true"></div>', unsafe_allow_html=True)
+        return st.button(
+            "خروج",
+            key="user_menu_logout",
+            type="tertiary",
+            use_container_width=True,
         )
 
 

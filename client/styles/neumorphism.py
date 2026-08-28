@@ -10,13 +10,13 @@ from pathlib import Path
 
 import streamlit as st
 
-BG = "#F2F4F7"
-SURFACE = "#E8ECF1"
-SHADOW_DARK = "#ccd0d8"
+BG = "#ffffff"
+SURFACE = "#f5f5f5"
+SHADOW_DARK = "#e5e5e5"
 SHADOW_LIGHT = "#ffffff"
-TEXT_PRIMARY = "#2C3E50"
-TEXT_SECONDARY = "#5A6878"  # FIX: [A11Y-01] WCAG contrast-compliant secondary text color.
-ACCENT = "#3D5FCC"  # FIX: [A11Y-01] WCAG contrast-compliant accent color.
+TEXT_PRIMARY = "#0a0a0a"
+TEXT_SECONDARY = "#737373"
+ACCENT = "#0e7490"
 
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 _FONTS_DIR = _ASSETS_DIR / "fonts"
@@ -72,14 +72,58 @@ def _build_global_css() -> str:
 <style>
 {font_face_css}
 :root {{
-    --bex-bg: {BG};
-    --bex-surface: {SURFACE};
-    --bex-shadow-dark: {SHADOW_DARK};
-    --bex-shadow-light: {SHADOW_LIGHT};
-    --bex-text-primary: {TEXT_PRIMARY};
-    --bex-text-secondary: {TEXT_SECONDARY};
-    --bex-accent: {ACCENT};
-    --bex-danger: #721c24;
+    --bex-background: {BG};
+    --bex-foreground: {TEXT_PRIMARY};
+    --bex-card: {BG};
+    --bex-card-foreground: {TEXT_PRIMARY};
+    --bex-muted: {SURFACE};
+    --bex-muted-foreground: {TEXT_SECONDARY};
+    --bex-border: {SHADOW_DARK};
+    --bex-input: {SHADOW_DARK};
+    --bex-ring: #a3a3a3;
+    --bex-primary: {ACCENT};
+    --bex-primary-foreground: #fafafa;
+    --bex-secondary: {SURFACE};
+    --bex-secondary-foreground: #171717;
+    --bex-destructive: #dc2626;
+    --bex-destructive-foreground: #fef2f2;
+    --bex-destructive-ring: #dc262633;
+    --bex-status-green-bg: #d4edda;
+    --bex-status-green-fg: #155724;
+    --bex-status-yellow-bg: #fff3cd;
+    --bex-status-yellow-fg: #856404;
+    --bex-status-red-bg: #f8d7da;
+    --bex-status-red-fg: #721c24;
+    --bex-status-gray-bg: #e2e3e5;
+    --bex-status-gray-fg: #383d41;
+    --bex-status-approved-bg: #e0e7ff;
+    --bex-status-approved-fg: #3730a3;
+    --bex-status-published-bg: #cce5ff;
+    --bex-status-published-fg: #004085;
+    --bex-role-manager-bg: #dbeafe;
+    --bex-role-manager-fg: #1e40af;
+    --bex-role-supervisor-bg: #fef3c7;
+    --bex-role-supervisor-fg: #92400e;
+    --bex-role-visitor-bg: #d1fae5;
+    --bex-role-visitor-fg: #065f46;
+    --bex-role-telesales-bg: #ede9fe;
+    --bex-role-telesales-fg: #5b21b6;
+    --bex-radius: 10px;
+    --bex-radius-md: 8px;
+    --bex-radius-lg: 10px;
+    --bex-radius-xl: 14px;
+    --bex-shadow-xs: 0 1px 2px 0 #0000000d;
+    --bex-ring-shadow: 0 0 0 3px #a3a3a380;
+
+    /* Backward-compatible aliases for existing helpers. */
+    --bex-bg: var(--bex-background);
+    --bex-surface: var(--bex-muted);
+    --bex-shadow-dark: var(--bex-border);
+    --bex-shadow-light: var(--bex-card);
+    --bex-text-primary: var(--bex-foreground);
+    --bex-text-secondary: var(--bex-muted-foreground);
+    --bex-accent: var(--bex-primary);
+    --bex-danger: var(--bex-destructive);
     --bex-login-shell-max: 36rem; /* Bextudio maxWidth/xl: 576px. */
     --bex-login-card-padding: 1.5rem; /* Bextudio spacing/6: 24px. */
     --bex-login-logo-max: 15rem;
@@ -228,7 +272,7 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
 div.st-key-app_header_row {{
     width: 100%;
     max-width: 100%;
-    border-bottom: 1px solid var(--bex-shadow-dark);
+    border-bottom: 1px solid var(--bex-border);
     box-sizing: border-box;
 }}
 
@@ -274,7 +318,7 @@ div.st-key-app_header_row [data-testid="stColumn"] {{
     height: 20px;
     flex: 0 0 1px;
     margin-inline-end: 12px;
-    background: var(--bex-shadow-dark);
+    background: var(--bex-border);
 }}
 
 .app-header-title {{
@@ -313,7 +357,7 @@ div.st-key-app_header_row [data-testid="stColumn"] {{
 .app-user-menu-divider {{
     height: 1px;
     margin: 0.4rem 0 0.3rem;
-    background: var(--bex-shadow-dark);
+    background: var(--bex-border);
 }}
 
 div.st-key-user_menu_trigger {{
@@ -331,18 +375,18 @@ div.st-key-user_menu_trigger button {{
     padding: 0.2rem 0.6rem !important;
     margin: 0 !important;
     box-sizing: border-box !important;
-    border: 1px solid var(--bex-shadow-dark) !important;
-    border-radius: 10px !important;
-    background: var(--bex-bg) !important;
-    color: var(--bex-text-primary) !important;
-    box-shadow: none !important;
+    border: 1px solid var(--bex-input) !important;
+    border-radius: var(--bex-radius-md) !important;
+    background: var(--bex-card) !important;
+    color: var(--bex-foreground) !important;
+    box-shadow: var(--bex-shadow-xs) !important;
     cursor: pointer !important;
     white-space: nowrap !important;
 }}
 
 div.st-key-user_menu_trigger button:hover {{
-    background: var(--bex-surface) !important;
-    border-color: var(--bex-text-secondary) !important;
+    background: var(--bex-muted) !important;
+    border-color: var(--bex-input) !important;
 }}
 
 div.st-key-user_menu_trigger button [data-testid="stMarkdownContainer"] p {{
@@ -351,7 +395,7 @@ div.st-key-user_menu_trigger button [data-testid="stMarkdownContainer"] p {{
     gap: 0.4rem;
     direction: rtl;
     unicode-bidi: isolate;
-    color: var(--bex-text-primary) !important;
+    color: var(--bex-foreground) !important;
     font-size: 0.86rem;
     line-height: 1;
 }}
@@ -361,10 +405,10 @@ div.st-key-user_menu_trigger button code {{
     align-items: center;
     flex: 0 0 auto;
     padding: 0.12rem 0.45rem;
-    border: 1px solid var(--bex-shadow-dark);
-    border-radius: 999px;
-    background: var(--bex-surface);
-    color: var(--bex-text-secondary);
+    border: 1px solid var(--bex-border);
+    border-radius: var(--bex-radius-md);
+    background: var(--bex-muted);
+    color: var(--bex-muted-foreground);
     font-family: inherit !important;
     font-size: 0.72rem;
     font-weight: 700;
@@ -410,15 +454,15 @@ div.st-key-user_menu_logout button {{
     min-height: 44px !important;
     padding: 0.45rem 0.65rem !important;
     border: 0 !important;
-    border-radius: 8px !important;
+    border-radius: var(--bex-radius-md) !important;
     background: transparent !important;
-    color: var(--bex-danger) !important;
+    color: var(--bex-destructive) !important;
     box-shadow: none !important;
     justify-content: flex-start !important;
 }}
 
 div.st-key-user_menu_logout button:hover {{
-    background: var(--bex-surface) !important;
+    background: var(--bex-muted) !important;
 }}
 
 div.st-key-user_menu_logout button > div {{
@@ -431,7 +475,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] {{
 }}
 
 div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
-    color: var(--bex-danger) !important;
+    color: var(--bex-destructive) !important;
     text-align: right !important;
 }}
 
@@ -490,10 +534,11 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     display: inline-block;
     width: auto;
     max-width: max-content;
-    background: var(--bex-bg);
-    border-radius: 14px;
+    background: var(--bex-card);
+    border: 1px solid var(--bex-border);
+    border-radius: var(--bex-radius-xl);
     padding: 0.38rem 0.6rem;
-    box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light);
+    box-shadow: var(--bex-shadow-xs);
 }}
 
 .main-logo img,
@@ -505,6 +550,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 
 .login-logo-shell {{
     background: transparent;
+    border: 0;
     border-radius: 0;
     padding: 0;
     box-shadow: none;
@@ -577,7 +623,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 
 .panel-description-columns {{
     margin: 0 0 0.85rem;
-    color: #607c5d;
+    color: var(--bex-muted-foreground);
     font-size: 0.88rem;
     line-height: 1.8;
     text-align: right !important;
@@ -616,9 +662,9 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 
 .pipeline-progress-track {{
     width: 100%;
-    height: 10px;
+    height: 8px;
     border-radius: 999px;
-    background: #d8dde5;
+    background: var(--bex-muted);
     position: relative;
     overflow: hidden;
     direction: rtl !important;
@@ -631,7 +677,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     top: 0;
     bottom: 0;
     border-radius: 999px;
-    background: linear-gradient(90deg, #3D5FCC 0%, #6f87d7 100%);
+    background: var(--bex-primary);
     transform-origin: right center;
     transition: width 240ms ease;
 }}
@@ -654,9 +700,9 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 
 .visitor-progress-track {{
     width: 100%;
-    height: 10px;
+    height: 8px;
     border-radius: 999px;
-    background: #d8dde5;
+    background: var(--bex-muted);
     position: relative;
     overflow: hidden;
     direction: rtl !important;
@@ -671,6 +717,11 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     border-radius: 999px;
     transform-origin: right center;
     transition: width 240ms ease;
+}}
+
+/* Replace the legacy inlined active color while preserving the green completion state. */
+.visitor-progress-fill[style*="#3D5FCC"] {{
+    background: var(--bex-primary) !important;
 }}
 
 .visitor-progress-note {{
@@ -717,27 +768,30 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 }}
 
 .neu-card {{
-    background: var(--bex-bg);
-    border-radius: 18px;
+    background: var(--bex-card);
+    border: 1px solid var(--bex-border);
+    border-radius: var(--bex-radius-lg);
     padding: 1.4rem 1.6rem;
     margin-bottom: 1rem;
-    box-shadow: 6px 6px 14px var(--bex-shadow-dark), -6px -6px 14px var(--bex-shadow-light);
+    box-shadow: var(--bex-shadow-xs);
 }}
 
 .neu-card-flat {{
-    background: var(--bex-bg);
-    border-radius: 14px;
+    background: var(--bex-card);
+    border: 1px solid var(--bex-border);
+    border-radius: var(--bex-radius-lg);
     padding: 1rem 1.2rem;
     margin-bottom: 0.8rem;
-    box-shadow: 3px 3px 8px var(--bex-shadow-dark), -3px -3px 8px var(--bex-shadow-light);
+    box-shadow: var(--bex-shadow-xs);
 }}
 
 .neu-metric {{
-    background: var(--bex-bg);
-    border-radius: 16px;
+    background: var(--bex-card);
+    border: 1px solid var(--bex-border);
+    border-radius: var(--bex-radius-lg);
     padding: 1.2rem 1rem;
     text-align: center;
-    box-shadow: 5px 5px 12px var(--bex-shadow-dark), -5px -5px 12px var(--bex-shadow-light);
+    box-shadow: var(--bex-shadow-xs);
     min-height: 100px;
     display: flex;
     flex-direction: column;
@@ -746,16 +800,17 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 }}
 
 .neu-metric .metric-value {{
-    font-size: 1.9rem;
-    font-weight: 700;
-    color: var(--bex-text-primary);
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--bex-foreground);
     line-height: 1.2;
+    font-variant-numeric: tabular-nums;
 }}
 
 .neu-metric .metric-label {{
-    font-size: 0.9rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    color: var(--bex-text-primary); /* FIX: [A11Y-01] Use primary color for metric labels. */
+    color: var(--bex-muted-foreground);
     margin-top: 0.35rem;
 }}
 
@@ -769,36 +824,63 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 div.stButton > button,
 div.stFormSubmitButton > button,
 div.stDownloadButton > button {{
-    border: none !important;
-    border-radius: 12px !important;
-    box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light) !important;
-    font-weight: 600 !important;
-    min-height: 44px !important; /* FIX: [A11Y-05] Minimum touch target. */
+    min-height: 36px !important;
+    height: 36px !important;
+    border: 1px solid var(--bex-input) !important;
+    border-radius: var(--bex-radius-md) !important;
+    background: var(--bex-card) !important;
+    color: var(--bex-foreground) !important;
+    box-shadow: var(--bex-shadow-xs) !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
 }}
 
 div.stButton > button {{
-    background: var(--bex-bg) !important;
-    color: var(--bex-text-primary) !important;
     padding: 0.55rem 1.2rem !important;
 }}
 
+div.stButton > button:hover,
+div.stDownloadButton > button:hover {{
+    background: var(--bex-muted) !important;
+    color: var(--bex-foreground) !important;
+}}
+
+div.stButton > button :is(p, [data-testid="stMarkdownContainer"] p),
+div.stDownloadButton > button :is(p, [data-testid="stMarkdownContainer"] p) {{
+    color: var(--bex-foreground) !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+}}
+
 div.stFormSubmitButton > button {{
-    background: var(--bex-accent) !important;
-    color: #ffffff !important;
+    background: var(--bex-primary) !important;
+    border-color: transparent !important;
+    color: var(--bex-primary-foreground) !important;
     padding: 0.55rem 2rem !important;
 }}
 
+div.stFormSubmitButton > button :is(p, [data-testid="stMarkdownContainer"] p) {{
+    color: var(--bex-primary-foreground) !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+}}
+
 div.stButton > button[data-testid*="primary"],
-div.stButton > button[data-testid*="primary"]:hover,
 div.stButton > button[data-testid*="primary"]:focus-visible,
 div.stButton > button[data-testid*="primary"]:disabled,
 div.stFormSubmitButton > button[data-testid*="primary"],
-div.stFormSubmitButton > button[data-testid*="primary"]:hover,
 div.stFormSubmitButton > button[data-testid*="primary"]:focus-visible,
 div.stFormSubmitButton > button[data-testid*="primary"]:disabled {{
-    background: var(--bex-accent) !important;
-    border-color: var(--bex-accent) !important;
-    color: #ffffff !important;
+    background: var(--bex-primary) !important;
+    border-color: transparent !important;
+    color: var(--bex-primary-foreground) !important;
+}}
+
+div.stButton > button[data-testid*="primary"]:hover,
+div.stFormSubmitButton > button[data-testid*="primary"]:hover {{
+    background: color-mix(in srgb, var(--bex-primary) 90%, var(--bex-foreground)) !important;
+    border-color: transparent !important;
+    color: var(--bex-primary-foreground) !important;
 }}
 
 div.stButton > button[data-testid*="primary"] :is(p, [data-testid="stMarkdownContainer"] p),
@@ -809,24 +891,54 @@ div.stFormSubmitButton > button[data-testid*="primary"] :is(p, [data-testid="stM
 div.stFormSubmitButton > button[data-testid*="primary"]:hover :is(p, [data-testid="stMarkdownContainer"] p),
 div.stFormSubmitButton > button[data-testid*="primary"]:focus-visible :is(p, [data-testid="stMarkdownContainer"] p),
 div.stFormSubmitButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p) {{
-    color: #ffffff !important;
+    color: var(--bex-primary-foreground) !important;
 }}
 
-div.stButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p),
-div.stFormSubmitButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p) {{
-    opacity: 0.75;
+div.stButton > button:disabled,
+div.stFormSubmitButton > button:disabled,
+div.stDownloadButton > button:disabled {{
+    opacity: 0.5 !important;
+    pointer-events: none !important;
 }}
 
 div[class*="st-key-flush_"] button {{
-    background: var(--bex-bg) !important;
-    border: 1px solid var(--bex-danger) !important;
-    color: var(--bex-danger) !important;
+    background: var(--bex-destructive) !important;
+    border: 1px solid transparent !important;
+    color: var(--bex-destructive-foreground) !important;
+}}
+
+div[class*="st-key-flush_"] button:hover {{
+    background: color-mix(in srgb, var(--bex-destructive) 90%, var(--bex-foreground)) !important;
+    color: var(--bex-destructive-foreground) !important;
+}}
+
+div[class*="st-key-flush_"] button :is(p, [data-testid="stMarkdownContainer"] p) {{
+    color: var(--bex-destructive-foreground) !important;
 }}
 
 div.stDownloadButton > button {{
-    background: var(--bex-bg) !important;
-    border: 1px solid var(--bex-surface) !important;
-    color: var(--bex-text-primary) !important;
+    background: var(--bex-card) !important;
+    border: 1px solid var(--bex-input) !important;
+    color: var(--bex-foreground) !important;
+}}
+
+div.stButton.st-key-user_menu_logout > button {{
+    width: 100% !important;
+    max-width: none !important;
+    border-color: transparent !important;
+    background: transparent !important;
+    color: var(--bex-destructive) !important;
+    box-shadow: none !important;
+    justify-content: flex-start !important;
+}}
+
+div.stButton.st-key-user_menu_logout > button:hover {{
+    background: var(--bex-muted) !important;
+    color: var(--bex-destructive) !important;
+}}
+
+div.stButton.st-key-user_menu_logout > button :is(p, [data-testid="stMarkdownContainer"] p) {{
+    color: var(--bex-destructive) !important;
 }}
 
 @media (min-width: 768px) {{
@@ -868,12 +980,15 @@ div.stDownloadButton > button {{
         max-width: none !important;
     }}
 
-    [data-testid^="stBaseButton"],
-    [data-testid="stDownloadButton"] button {{
+    div.stButton > [data-testid^="stBaseButton"],
+    div.stFormSubmitButton > [data-testid^="stBaseButton"],
+    div.stDownloadButton > button,
+    [data-testid="stDownloadButton"] > button {{
         width: 100% !important;
         min-width: 0 !important;
         max-width: none !important;
         min-height: 44px !important;
+        height: 44px !important;
         flex: 1 1 100% !important;
     }}
 }}
@@ -884,12 +999,19 @@ div[data-baseweb="textarea"] > div,
 input[type="text"],
 input[type="password"],
 input[type="date"] {{
-    border-radius: 10px !important;
-    border: none !important;
-    box-shadow: inset 2px 2px 5px var(--bex-shadow-dark), inset -2px -2px 5px var(--bex-shadow-light) !important;
-    background: var(--bex-bg) !important;
+    min-height: 36px !important;
+    border-radius: var(--bex-radius-md) !important;
+    border: 1px solid var(--bex-input) !important;
+    box-shadow: none !important;
+    background: var(--bex-card) !important;
+    color: var(--bex-foreground) !important;
+    font-size: 0.875rem !important;
 }}
 
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
 div.stButton > button:focus-visible,
 div.stFormSubmitButton > button:focus-visible,
 div.stDownloadButton > button:focus-visible,
@@ -898,10 +1020,60 @@ div.st-key-user_menu_logout button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 [data-baseweb="select"] > div:focus-within,
-details[data-testid="stExpander"] summary:focus-visible {{
+details[data-testid="stExpander"] summary:focus-visible,
+[data-testid="stCheckbox"] input:focus-visible + div,
+[data-testid="stToggle"] [role="switch"]:focus-visible {{
     outline: none !important;
-    box-shadow: 0 0 0 3px rgba(61,95,204,.45) !important;
-    border-color: var(--bex-accent) !important;
+    box-shadow: var(--bex-ring-shadow) !important;
+    border-color: var(--bex-ring) !important;
+}}
+
+div[class*="st-key-flush_"] button:focus-visible,
+div.st-key-user_menu_logout button:focus-visible {{
+    box-shadow: 0 0 0 3px var(--bex-destructive-ring) !important;
+    border-color: var(--bex-destructive) !important;
+}}
+
+[data-testid="stForm"] {{
+    background: var(--bex-card) !important;
+    border: 1px solid var(--bex-border) !important;
+    border-radius: var(--bex-radius-lg) !important;
+    box-shadow: var(--bex-shadow-xs) !important;
+}}
+
+[data-testid="stAlertContainer"] {{
+    background: var(--bex-card) !important;
+    color: var(--bex-foreground) !important;
+    border: 1px solid var(--bex-border) !important;
+    border-inline-start: 4px solid var(--bex-primary) !important;
+    border-radius: var(--bex-radius-lg) !important;
+    box-shadow: var(--bex-shadow-xs) !important;
+    font-size: 0.875rem !important;
+}}
+
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) {{
+    border-inline-start-color: var(--bex-status-green-fg) !important;
+}}
+
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) {{
+    border-inline-start-color: var(--bex-status-yellow-fg) !important;
+}}
+
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]) {{
+    border-inline-start-color: var(--bex-destructive) !important;
+}}
+
+[data-testid="stAlertContainer"] [data-testid^="stAlertContent"] {{
+    color: var(--bex-foreground) !important;
+    font-size: 0.875rem !important;
+}}
+
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] p,
+label p {{
+    color: var(--bex-foreground) !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
 }}
 
 [data-testid="stTextInput"] input,
@@ -928,21 +1100,49 @@ textarea {{
     justify-content: flex-start !important;
     column-gap: 0.45rem !important;
     row-gap: 0 !important;
-    min-height: 40px !important;
+    min-height: 36px !important;
     line-height: 1.8 !important;
     padding-right: 0.25rem !important;
     cursor: pointer !important;
 }}
 [data-testid="stCheckbox"] input[type="checkbox"] {{
-    width: 18px !important;
-    height: 18px !important;
+    width: 16px !important;
+    height: 16px !important;
     margin: 0 !important;
+}}
+[data-testid="stCheckbox"] label > span:first-child,
+[data-testid="stCheckbox"] label > span:first-child > div {{
+    width: 16px !important;
+    min-width: 16px !important;
+    height: 16px !important;
+    border: 1px solid var(--bex-input) !important;
+    border-radius: 4px !important;
+    background: var(--bex-card) !important;
+    box-shadow: none !important;
+}}
+[data-testid="stCheckbox"] label:has(input:checked) > span:first-child,
+[data-testid="stCheckbox"] label:has(input:checked) > span:first-child > div {{
+    border-color: var(--bex-primary) !important;
+    background: var(--bex-primary) !important;
 }}
 [data-testid="stCheckbox"] > label > div:last-child {{
     margin-right: 0.18rem !important;
 }}
 [data-testid="stCheckbox"] span {{
     margin: 0 !important;
+}}
+
+[data-testid="stToggle"] [role="switch"] {{
+    min-width: 36px !important;
+    width: 36px !important;
+    height: 20px !important;
+    border: 1px solid var(--bex-input) !important;
+    background: var(--bex-muted) !important;
+    box-shadow: none !important;
+}}
+[data-testid="stToggle"] [role="switch"][aria-checked="true"] {{
+    border-color: var(--bex-primary) !important;
+    background: var(--bex-primary) !important;
 }}
 
 /* FIX: Selectbox search must auto-switch direction (Persian RTL / English LTR). */
@@ -959,7 +1159,12 @@ textarea {{
 [data-testid="stFileUploaderDropzone"] {{
     direction: rtl !important;
     text-align: right !important;
+    width: 100% !important;
     min-height: 44px !important; /* FIX: [A11Y-05] Minimum touch target for upload zone. */
+    border: 1px dashed var(--bex-input) !important;
+    border-radius: var(--bex-radius-lg) !important;
+    background: var(--bex-card) !important;
+    box-shadow: none !important;
 }}
 
 [data-testid="stFileUploaderDropzone"] button {{
@@ -967,17 +1172,19 @@ textarea {{
 }}
 
 details[data-testid="stExpander"] {{
-    background: var(--bex-bg) !important;
-    border: none !important;
-    border-radius: 14px !important;
-    box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light) !important;
+    background: var(--bex-card) !important;
+    border: 1px solid var(--bex-border) !important;
+    border-radius: var(--bex-radius-lg) !important;
+    box-shadow: var(--bex-shadow-xs) !important;
     margin-bottom: 0.8rem;
 }}
 
 details[data-testid="stExpander"] summary {{
     direction: rtl !important;
     text-align: right !important;
-    font-size: 1.08rem !important;
+    color: var(--bex-foreground) !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
 }}
 
 /* FIX: [A11Y-02] Expander icon is intentionally visible for accessibility. */
@@ -1002,9 +1209,11 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
 }}
 
 [data-testid="stDataFrame"] {{
-    border-radius: 12px !important;
+    border: 1px solid var(--bex-border) !important;
+    border-radius: var(--bex-radius-lg) !important;
     overflow: hidden;
-    box-shadow: 3px 3px 8px var(--bex-shadow-dark), -3px -3px 8px var(--bex-shadow-light) !important;
+    background: var(--bex-card) !important;
+    box-shadow: var(--bex-shadow-xs) !important;
 }}
 
 /* FIX: Center all dataframe cells/headers and keep Persian-friendly visual alignment. */
@@ -1027,21 +1236,23 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
 
 .badge {{
     display: inline-block;
-    padding: 0.22rem 0.7rem;
-    border-radius: 20px;
-    font-size: 0.78rem;
-    font-weight: 700;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid currentColor;
+    border-radius: var(--bex-radius-md);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1rem;
 }}
 
-.badge-green  {{ background: #d4edda; color: #155724; }}
-.badge-yellow {{ background: #fff3cd; color: #856404; }}
-.badge-red    {{ background: #f8d7da; color: #721c24; }}
-.badge-gray   {{ background: #e2e3e5; color: #383d41; }}
-.badge-draft     {{ background: #e2e3e5; color: #383d41; }}
-.badge-supervisor-approved {{ background: #e0e7ff; color: #3730a3; }}
-.badge-published {{ background: #cce5ff; color: #004085; }}
-.badge-completed {{ background: #d4edda; color: #155724; }}
-.badge-skipped   {{ background: #f8d7da; color: #721c24; }}
+.badge-green  {{ background: var(--bex-status-green-bg); color: var(--bex-status-green-fg); }}
+.badge-yellow {{ background: var(--bex-status-yellow-bg); color: var(--bex-status-yellow-fg); }}
+.badge-red    {{ background: var(--bex-status-red-bg); color: var(--bex-status-red-fg); }}
+.badge-gray   {{ background: var(--bex-status-gray-bg); color: var(--bex-status-gray-fg); }}
+.badge-draft     {{ background: var(--bex-status-gray-bg); color: var(--bex-status-gray-fg); }}
+.badge-supervisor-approved {{ background: var(--bex-status-approved-bg); color: var(--bex-status-approved-fg); }}
+.badge-published {{ background: var(--bex-status-published-bg); color: var(--bex-status-published-fg); }}
+.badge-completed {{ background: var(--bex-status-green-bg); color: var(--bex-status-green-fg); }}
+.badge-skipped   {{ background: var(--bex-status-red-bg); color: var(--bex-status-red-fg); }}
 
 .section-header {{
     font-size: 1.15rem;
@@ -1049,39 +1260,43 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
     color: var(--bex-text-primary);
     margin-bottom: 0.6rem;
     padding-bottom: 0.3rem;
-    border-bottom: 2px solid var(--bex-surface);
+    border-bottom: 1px solid var(--bex-border);
     text-align: right !important;
     direction: rtl !important;
 }}
 
 .role-badge {{
     display: inline-block;
-    padding: 0.2rem 0.8rem;
-    border-radius: 20px;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid currentColor;
+    border-radius: var(--bex-radius-md);
     font-size: 0.75rem;
-    font-weight: 700;
+    font-weight: 500;
+    line-height: 1rem;
 }}
 
-.role-manager    {{ background: #dbeafe; color: #1e40af; }}
-.role-supervisor {{ background: #fef3c7; color: #92400e; }}
-.role-visitor    {{ background: #d1fae5; color: #065f46; }}
-.role-telesales  {{ background: #ede9fe; color: #5b21b6; }}
+.role-manager    {{ background: var(--bex-role-manager-bg); color: var(--bex-role-manager-fg); }}
+.role-supervisor {{ background: var(--bex-role-supervisor-bg); color: var(--bex-role-supervisor-fg); }}
+.role-visitor    {{ background: var(--bex-role-visitor-bg); color: var(--bex-role-visitor-fg); }}
+.role-telesales  {{ background: var(--bex-role-telesales-bg); color: var(--bex-role-telesales-fg); }}
 
 .monitoring-bar {{
-    background: #dbeafe;
-    color: #1e40af;
-    border-radius: 10px;
+    background: var(--bex-card);
+    color: var(--bex-role-manager-fg);
+    border: 1px solid var(--bex-border);
+    border-inline-start: 4px solid var(--bex-role-manager-fg);
+    border-radius: var(--bex-radius-lg);
     padding: 0.6rem 1rem;
     font-weight: 600;
     font-size: 0.85rem;
     text-align: center;
     margin-bottom: 1rem;
-    box-shadow: inset 2px 2px 5px rgba(0,0,0,0.06), inset -2px -2px 5px rgba(255,255,255,0.8);
+    box-shadow: var(--bex-shadow-xs);
 }}
 
 button[data-baseweb="tab"] {{
-    border-radius: 10px 10px 0 0 !important;
-    font-weight: 600 !important;
+    border-radius: var(--bex-radius-md) var(--bex-radius-md) 0 0 !important;
+    font-weight: 500 !important;
 }}
 
 #MainMenu {{ visibility: hidden; }}

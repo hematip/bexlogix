@@ -34,7 +34,7 @@ _ASSIGNMENT_STATUS_MAP = {
 }
 
 _COLUMN_LABELS = {
-    "assignment_id": "شناسه تخصیص",
+    "assignment_id": "ردیف",
     "work_date": "تاریخ کاری",
     "visitor_code": "کد ویزیتور",
     "store_code": "کد فروشگاه",

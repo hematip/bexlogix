@@ -27,7 +27,7 @@ CONTACT_LABELS = {
 OUTCOME_LABELS = {
     TelesalesOutcome.SALE_DONE.value: "فروش انجام شد",
     TelesalesOutcome.NO_NEED.value: "نیازی نبود",
-    TelesalesOutcome.POSTPONE.value: "موکول شد",
+    TelesalesOutcome.POSTPONE.value: "موکول شد (پیگیری جدید برای فردا ساخته می‌شود)",
     TelesalesOutcome.INVALID.value: "نامعتبر",
 }
 
@@ -139,15 +139,15 @@ def render_telesales_panel(current_user: dict) -> None:
         with st.expander(title):
             st.markdown('<div class="neu-card-flat">', unsafe_allow_html=True)
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>تاریخ پیگیری:</strong> {_safe_text(item.get("followup_date"))}</div>',
+                f'<div class="telesales-detail-line"><strong>تاریخ پیگیری:</strong> <span class="ltr-inline">{_safe_text(item.get("followup_date"))}</span></div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>تاریخ ویزیت قرمز:</strong> {_safe_text(item.get("visit_date"))}</div>',
+                f'<div class="telesales-detail-line"><strong>تاریخ ویزیت قرمز:</strong> <span class="ltr-inline">{_safe_text(item.get("visit_date"))}</span></div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="telesales-detail-line"><strong>ویزیتور:</strong> {_safe_text(item.get("visitor_code"))}</div>',
+                f'<div class="telesales-detail-line"><strong>ویزیتور:</strong> <span class="ltr-inline">{_safe_text(item.get("visitor_code"))}</span></div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
@@ -191,7 +191,11 @@ def render_telesales_panel(current_user: dict) -> None:
                     key=f"note_{followup_id}",
                     placeholder="یادداشت اختیاری پیگیری...",
                 )
-                submitted = st.form_submit_button("ذخیره نتیجه", use_container_width=True)
+                submitted = st.form_submit_button(
+                    "ذخیره نتیجه",
+                    use_container_width=True,
+                    type="primary",
+                )
 
             if submitted:
                 try:

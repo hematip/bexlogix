@@ -100,11 +100,11 @@ def render_supervisor_dashboard(current_user: dict) -> None:
     neu_section_header("شاخص‌های روزانه")
     render_metric_grid(
         [
-            ("صف تامین‌پذیر", kpis["due_stores"]),
+            ("فروشگاه‌های موعددار امروز", kpis["due_stores"]),
             ("تخصیص‌شده", kpis["assigned_stores"]),
             ("ویزیت تکمیل‌شده", kpis["completed_visits"]),
             ("سبز / زرد / قرمز", f"{kpis['green']} / {kpis['yellow']} / {kpis['red']}"),
-            ("صف فروش تلفنی", kpis["telesales_queue_size"]),
+            ("صف تماس تلفنی (کل صف فعال)", kpis["telesales_queue_size"]),
         ]
     )
 

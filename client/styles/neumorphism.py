@@ -78,6 +78,7 @@ def _build_global_css() -> str:
     --bex-text-primary: {TEXT_PRIMARY};
     --bex-text-secondary: {TEXT_SECONDARY};
     --bex-accent: {ACCENT};
+    --bex-danger: #721c24;
 }}
 
 html,
@@ -300,7 +301,7 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
 
 .login-footer-powered {{
     text-align: center;
-    color: #7a8492;
+    color: var(--bex-text-secondary);
     font-size: 0.78rem;
     margin-top: 1.2rem;
 }}
@@ -423,16 +424,21 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
 
 .hourglass-spin {{
     display: inline-block;
-    animation: hourglass-wobble 1.1s ease-in-out infinite;
     transform-origin: center;
 }}
 
-@keyframes hourglass-wobble {{
-    0% {{ transform: rotate(0deg) scale(1); }}
-    25% {{ transform: rotate(-18deg) scale(1.05); }}
-    50% {{ transform: rotate(0deg) scale(1); }}
-    75% {{ transform: rotate(18deg) scale(1.05); }}
-    100% {{ transform: rotate(0deg) scale(1); }}
+@media (prefers-reduced-motion: no-preference) {{
+    .hourglass-spin {{
+        animation: hourglass-wobble 1.1s ease-in-out infinite;
+    }}
+
+    @keyframes hourglass-wobble {{
+        0% {{ transform: rotate(0deg) scale(1); }}
+        25% {{ transform: rotate(-18deg) scale(1.05); }}
+        50% {{ transform: rotate(0deg) scale(1); }}
+        75% {{ transform: rotate(18deg) scale(1.05); }}
+        100% {{ transform: rotate(0deg) scale(1); }}
+    }}
 }}
 
 .ltr-inline {{
@@ -522,6 +528,22 @@ div.stFormSubmitButton > button {{
     padding: 0.55rem 2rem !important;
 }}
 
+button[data-testid*="primary"] {{
+    background: var(--bex-accent) !important;
+    border-color: var(--bex-accent) !important;
+    color: #fff !important;
+}}
+
+button[data-testid*="primary"] * {{
+    color: #fff !important;
+}}
+
+div[class*="st-key-flush_"] button {{
+    background: var(--bex-bg) !important;
+    border: 1px solid var(--bex-danger) !important;
+    color: var(--bex-danger) !important;
+}}
+
 div.stDownloadButton > button {{
     background: var(--bex-bg) !important;
     border: 1px solid var(--bex-surface) !important;
@@ -538,6 +560,16 @@ input[type="date"] {{
     border: none !important;
     box-shadow: inset 2px 2px 5px var(--bex-shadow-dark), inset -2px -2px 5px var(--bex-shadow-light) !important;
     background: var(--bex-bg) !important;
+}}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[data-baseweb="select"] > div:focus-within,
+details[data-testid="stExpander"] summary:focus-visible {{
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(61,95,204,.45) !important;
+    border-color: var(--bex-accent) !important;
 }}
 
 [data-testid="stTextInput"] input,
@@ -721,6 +753,11 @@ button[data-baseweb="tab"] {{
 }}
 
 #MainMenu {{ visibility: hidden; }}
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"] {{
+    display: none !important;
+}}
 footer {{ visibility: hidden; }}
 </style>
 """

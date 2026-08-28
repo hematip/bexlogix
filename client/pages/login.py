@@ -74,7 +74,6 @@ def render_login_page() -> None:
     st.markdown(
         """
         <div class="login-title-block">
-            <div class="login-title-main">ورود به BexLogix</div>
             <div class="login-title-sub">سیستم مدیریت عملیات فروش میدانی</div>
         </div>
         """,

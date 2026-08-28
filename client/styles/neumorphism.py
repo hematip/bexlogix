@@ -82,6 +82,7 @@ def _build_global_css() -> str:
     --bex-danger: #721c24;
     --bex-login-shell-max: 36rem; /* Bextudio maxWidth/xl: 576px. */
     --bex-login-card-padding: 1.5rem; /* Bextudio spacing/6: 24px. */
+    --bex-login-logo-max: 15rem;
 }}
 
 html,
@@ -500,6 +501,17 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     max-width: 320px;
     display: block;
     height: auto;
+}}
+
+.login-logo-shell {{
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+}}
+
+.login-logo img {{
+    max-width: var(--bex-login-logo-max) !important;
 }}
 
 .login-title-block {{

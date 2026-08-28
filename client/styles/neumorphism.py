@@ -80,6 +80,8 @@ def _build_global_css() -> str:
     --bex-text-secondary: {TEXT_SECONDARY};
     --bex-accent: {ACCENT};
     --bex-danger: #721c24;
+    --bex-login-shell-max: 36rem; /* Bextudio maxWidth/xl: 576px. */
+    --bex-login-card-padding: 1.5rem; /* Bextudio spacing/6: 24px. */
 }}
 
 html,
@@ -503,6 +505,32 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 .login-title-block {{
     text-align: center;
     margin-bottom: 0.9rem;
+}}
+
+[data-testid="stMainBlockContainer"]:has(.login-title-block) {{
+    width: 100% !important;
+    max-width: var(--bex-login-shell-max) !important;
+    margin-inline: auto !important;
+    box-sizing: border-box !important;
+}}
+
+[data-testid="stMainBlockContainer"]:has(.login-title-block) [data-testid="stForm"] {{
+    padding: var(--bex-login-card-padding) !important;
+    box-sizing: border-box !important;
+}}
+
+[data-testid="stMainBlockContainer"]:has(.login-title-block) div.stFormSubmitButton {{
+    display: flex !important;
+    justify-content: stretch !important;
+    width: 100% !important;
+}}
+
+[data-testid="stMainBlockContainer"]:has(.login-title-block)
+    div.stFormSubmitButton > [data-testid^="stBaseButton"] {{
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: none !important;
+    flex-basis: 100% !important;
 }}
 
 .login-title-main {{

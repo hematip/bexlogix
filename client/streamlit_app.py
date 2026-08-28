@@ -89,30 +89,9 @@ def _resolve_tab_icon():
 
 # Contract: _render_topbar executes one deterministic step in the workflow.
 def _render_topbar(current_user: dict, page_title: str) -> bool:
-    logout_confirm = bool(st.session_state.get("logout_confirm", False))
     with st.container(key="app_header"):
         with st.container(key="app_header_row"):
-            logout_col = render_dashboard_header(current_user, page_title)
-            with logout_col:
-                if not logout_confirm:
-                    if st.button("خروج", key="logout_topbar", use_container_width=True):
-                        st.session_state["logout_confirm"] = True
-                        st.rerun()
-
-        if not logout_confirm:
-            return False
-
-        st.warning("مطمئن هستید؟ جلسه شما پایان می‌یابد.")
-        c1, c2 = st.columns(2, gap="small")
-        with c1:
-            if st.button("بله، خروج", key="logout_topbar_yes", use_container_width=True):
-                st.session_state["logout_confirm"] = False
-                return True
-        with c2:
-            if st.button("انصراف", key="logout_topbar_cancel", use_container_width=True):
-                st.session_state["logout_confirm"] = False
-                st.rerun()
-    return False
+            return render_dashboard_header(current_user, page_title)
 
 # Contract: main executes one deterministic step in the workflow.
 def main() -> None:

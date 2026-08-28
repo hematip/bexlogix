@@ -136,7 +136,6 @@ def _render_grade_distribution(assignments_df: pd.DataFrame) -> None:
 
 
 def render_visitor_panel(current_user: dict) -> None:
-    render_page_title("مسیر من")
     profile = _cached_visitor_profile(current_user["id"])
     if not profile:
         st.error("برای این حساب کاربری پروفایل ویزیتور پیدا نشد.")

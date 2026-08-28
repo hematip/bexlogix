@@ -631,8 +631,6 @@ def _render_pipeline_result(result: dict) -> None:
 
 
 def render_manager_dashboard(current_user: dict) -> None:
-    render_page_title("داشبورد مدیر")
-
     work_date = jalali_date_input(
         label="📅 تاریخ کاری",
         key_prefix="manager_work_date",

@@ -84,8 +84,6 @@ def _export_all_routes(work_date: date, visitor_options: dict[str, int]) -> Byte
 
 
 def render_supervisor_dashboard(current_user: dict) -> None:
-    render_page_title("داشبورد سرپرست")
-
     work_date = jalali_date_input(
         label="📅 تاریخ کاری",
         key_prefix="supervisor_work_date",

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import base64
+import html
 from pathlib import Path
 
 import streamlit as st
@@ -210,47 +211,131 @@ div[class*="st-key-"][class*="_today_shortcut"] button {{
     padding-right: 0.9rem !important;
 }}
 
-.app-user-mini {{
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.3rem;
-    background: var(--bex-bg);
-    border-radius: 12px;
-    padding: 0.45rem 0.5rem;
-    box-shadow: 4px 4px 10px var(--bex-shadow-dark), -4px -4px 10px var(--bex-shadow-light);
-    margin-top: 0;
-    margin-bottom: 0.45rem;
+div.st-key-app_header_row {{
     width: 100%;
-    min-width: 140px;
     max-width: 100%;
+    border-bottom: 1px solid var(--bex-shadow-dark);
     box-sizing: border-box;
 }}
 
-.app-user-shell {{
-    width: 100%;
-    max-width: 100%;
+div.st-key-app_header_row [data-testid="stHorizontalBlock"] {{
+    display: grid !important;
+    grid-template-columns: minmax(0, 4.2fr) minmax(0, 3.6fr) minmax(0, 2.2fr) auto;
+    align-items: center !important;
+    gap: 0.75rem !important;
+    min-height: 64px;
+    padding-inline: 0;
+}}
+
+div.st-key-app_header_row [data-testid="stColumn"] {{
+    width: auto !important;
+    min-width: 0 !important;
+    flex: none !important;
+}}
+
+.app-header-brand {{
     display: flex;
-    direction: ltr;
-    justify-content: flex-start;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
 }}
 
-.topbar-spacer {{
-    height: 0.1rem;
+.app-header-brand-mark {{
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
 }}
 
-.app-user-mini-name {{
-    font-size: 0.85rem;
-    font-weight: 700;
-    line-height: 1.1;
+.app-header-brand-mark img {{
+    display: block;
+    width: auto !important;
+    height: auto !important;
+    max-width: 100% !important;
+    max-height: 32px !important;
 }}
 
-.st-key-logout_topbar button {{
+.app-header-title {{
+    min-width: 0;
+    padding-inline-start: 0.85rem;
+    border-inline-start: 1px solid var(--bex-shadow-dark);
+    color: var(--bex-text-primary);
+    font-size: 1.15rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}}
+
+.app-header-center {{
+    min-height: 1px;
+}}
+
+.app-header-user {{
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    min-width: 0;
+}}
+
+.app-header-username {{
+    min-width: 0;
+    overflow: hidden;
+    color: var(--bex-text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}}
+
+div.st-key-app_header_row .st-key-logout_topbar button {{
     width: 100% !important;
-    min-width: 140px !important;
+    min-width: 5.75rem !important;
     margin: 0 !important;
     box-sizing: border-box !important;
+    white-space: nowrap !important;
+}}
+
+div.st-key-app_header [data-testid="stAlert"] {{
+    margin-top: 0.75rem;
+}}
+
+@media (max-width: 767px) {{
+    div.st-key-app_header_row [data-testid="stHorizontalBlock"] {{
+        grid-template-columns: minmax(0, 1fr) auto;
+        min-height: auto;
+        padding-block: 0.65rem;
+        row-gap: 0.55rem !important;
+    }}
+
+    div.st-key-app_header_row [data-testid="stColumn"]:nth-child(1) {{
+        grid-column: 1 / -1;
+    }}
+
+    div.st-key-app_header_row [data-testid="stColumn"]:nth-child(2) {{
+        display: none !important;
+    }}
+
+    div.st-key-app_header_row [data-testid="stColumn"]:nth-child(3) {{
+        grid-column: 1;
+    }}
+
+    div.st-key-app_header_row [data-testid="stColumn"]:nth-child(4) {{
+        grid-column: 2;
+    }}
+
+    .app-header-brand {{
+        width: 100%;
+    }}
+
+    .app-header-title {{
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+
+    .app-header-user {{
+        justify-content: flex-start;
+    }}
 }}
 
 .main-logo,
@@ -524,18 +609,37 @@ div.stButton > button {{
 
 div.stFormSubmitButton > button {{
     background: var(--bex-accent) !important;
-    color: #fff !important;
+    color: #ffffff !important;
     padding: 0.55rem 2rem !important;
 }}
 
-button[data-testid*="primary"] {{
+div.stButton > button[data-testid*="primary"],
+div.stButton > button[data-testid*="primary"]:hover,
+div.stButton > button[data-testid*="primary"]:focus-visible,
+div.stButton > button[data-testid*="primary"]:disabled,
+div.stFormSubmitButton > button[data-testid*="primary"],
+div.stFormSubmitButton > button[data-testid*="primary"]:hover,
+div.stFormSubmitButton > button[data-testid*="primary"]:focus-visible,
+div.stFormSubmitButton > button[data-testid*="primary"]:disabled {{
     background: var(--bex-accent) !important;
     border-color: var(--bex-accent) !important;
-    color: #fff !important;
+    color: #ffffff !important;
 }}
 
-button[data-testid*="primary"] * {{
-    color: #fff !important;
+div.stButton > button[data-testid*="primary"] :is(p, [data-testid="stMarkdownContainer"] p),
+div.stButton > button[data-testid*="primary"]:hover :is(p, [data-testid="stMarkdownContainer"] p),
+div.stButton > button[data-testid*="primary"]:focus-visible :is(p, [data-testid="stMarkdownContainer"] p),
+div.stButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"] :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"]:hover :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"]:focus-visible :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p) {{
+    color: #ffffff !important;
+}}
+
+div.stButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p),
+div.stFormSubmitButton > button[data-testid*="primary"]:disabled :is(p, [data-testid="stMarkdownContainer"] p) {{
+    opacity: 0.75;
 }}
 
 div[class*="st-key-flush_"] button {{
@@ -562,7 +666,9 @@ input[type="date"] {{
     background: var(--bex-bg) !important;
 }}
 
-button:focus-visible,
+div.stButton > button:focus-visible,
+div.stFormSubmitButton > button:focus-visible,
+div.stDownloadButton > button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 [data-baseweb="select"] > div:focus-within,
@@ -800,6 +906,34 @@ def render_login_logo() -> None:
             f'<div class="login-logo"><div class="login-logo-shell">{tag}</div></div>',
             unsafe_allow_html=True,
         )
+
+
+def render_dashboard_header(current_user: dict, title: str):
+    logo_tag = _logo_img_tag(max_width=128)
+    safe_title = html.escape(str(title or ""))
+    safe_username = html.escape(str(current_user.get("username") or ""))
+    role_badge = role_badge_html(str(current_user.get("role") or ""))
+    brand_html = f'<span class="app-header-brand-mark">{logo_tag}</span>' if logo_tag else ""
+
+    brand_col, center_col, user_col, logout_col = st.columns(
+        [4.2, 3.6, 2.2, 1.0],
+        gap="small",
+    )
+    with brand_col:
+        st.markdown(
+            f'<div class="app-header-brand">{brand_html}'
+            f'<span class="app-header-title">{safe_title}</span></div>',
+            unsafe_allow_html=True,
+        )
+    with center_col:
+        st.markdown('<div class="app-header-center" aria-hidden="true"></div>', unsafe_allow_html=True)
+    with user_col:
+        st.markdown(
+            f'<div class="app-header-user"><span class="app-header-username">{safe_username}</span>'
+            f'{role_badge}</div>',
+            unsafe_allow_html=True,
+        )
+    return logout_col
 
 
 def render_main_logo(max_width: int = 220) -> None:

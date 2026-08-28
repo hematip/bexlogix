@@ -58,8 +58,6 @@ def _get_paginated_slice(items: list[dict], page: int) -> tuple[list[dict], int,
     return items[start_idx:end_idx], safe_page, start_idx + 1 if total > 0 else 0, end_idx
 
 def render_telesales_panel(current_user: dict) -> None:
-    render_page_title("پنل فروش تلفنی")
-
     as_of_date = jalali_date_input(
         label="📅 نمایش موارد تا تاریخ",
         key_prefix="telesales_as_of_date",

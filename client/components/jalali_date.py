@@ -70,15 +70,6 @@ def jalali_date_input(
     if day_key not in st.session_state:
         st.session_state[day_key] = int(default_jalali.day)
 
-    st.markdown(f'<div class="date-input-label">{label}</div>', unsafe_allow_html=True)
-    if st.button("📅 امروز", key=f"{key_prefix}_today_shortcut", use_container_width=False):
-        st.session_state[year_key] = int(today_jalali.year)
-        st.session_state[month_key] = (
-            f"{_to_fa_digits(f'{int(today_jalali.month):02d}')} - {_PERSIAN_MONTHS[int(today_jalali.month)]}"
-        )
-        st.session_state[day_key] = int(today_jalali.day)
-        st.rerun()
-
     preview_year = int(st.session_state.get(year_key, int(default_jalali.year)))
     preview_month_label = str(st.session_state.get(month_key, ""))
     preview_month = int(default_jalali.month)
@@ -95,10 +86,20 @@ def jalali_date_input(
     preview_gregorian = preview_jalali.togregorian()
     preview_fa = f"{_to_fa_digits(preview_day)} {_PERSIAN_MONTHS[preview_month]} {_to_fa_digits(preview_year)}"
 
-    st.markdown(
-        f'<div class="jalali-selected-caption">تاریخ انتخابی: {preview_fa} (معادل میلادی: {preview_gregorian.isoformat()})</div>',
-        unsafe_allow_html=True,
-    )
+    caption_col, today_col = st.columns([5, 1], gap="small", vertical_alignment="center")
+    with caption_col:
+        st.markdown(
+            f'<div class="jalali-selected-caption">تاریخ انتخابی: {preview_fa} (معادل میلادی: {preview_gregorian.isoformat()})</div>',
+            unsafe_allow_html=True,
+        )
+    with today_col:
+        if st.button("📅 امروز", key=f"{key_prefix}_today_shortcut", use_container_width=False):
+            st.session_state[year_key] = int(today_jalali.year)
+            st.session_state[month_key] = (
+                f"{_to_fa_digits(f'{int(today_jalali.month):02d}')} - {_PERSIAN_MONTHS[int(today_jalali.month)]}"
+            )
+            st.session_state[day_key] = int(today_jalali.day)
+            st.rerun()
 
     # FIX: [UX-DATE-01] Keep year/month/day as three equal-width columns across all panels.
     col_year, col_month, col_day = st.columns(3)

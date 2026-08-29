@@ -115,6 +115,15 @@ def _build_global_css() -> str:
     --bex-shadow-xs: 0 1px 2px 0 #0000000d;
     --bex-ring-shadow: 0 0 0 3px #a3a3a380;
 
+    /* BexLogix spacing scale. Keep all layout rhythm on these steps. */
+    --bex-space-1: 4px;
+    --bex-space-2: 8px;
+    --bex-space-3: 12px;
+    --bex-space-4: 16px;
+    --bex-space-6: 24px;
+    --bex-space-8: 32px;
+    --bex-space-12: 48px;
+
     /* Backward-compatible aliases for existing helpers. */
     --bex-bg: var(--bex-background);
     --bex-surface: var(--bex-muted);
@@ -125,18 +134,18 @@ def _build_global_css() -> str:
     --bex-accent: var(--bex-primary);
     --bex-danger: var(--bex-destructive);
     --bex-login-shell-max: 36rem; /* Bextudio maxWidth/xl: 576px. */
-    --bex-login-card-padding: 1.5rem; /* Bextudio spacing/6: 24px. */
+    --bex-login-card-padding: var(--bex-space-6);
     --bex-login-logo-max: 15rem;
     --bex-shell-max: 1280px;
-    --bex-shell-padding: 24px;
-    --bex-shell-offset: -24px;
-    --bex-shell-padding-mobile: 16px;
-    --bex-shell-offset-mobile: -16px;
+    --bex-shell-padding: var(--bex-space-6);
+    --bex-shell-offset: calc(-1 * var(--bex-space-6));
+    --bex-shell-padding-mobile: var(--bex-space-4);
+    --bex-shell-offset-mobile: calc(-1 * var(--bex-space-4));
     --bex-control-min-width: 140px;
     --bex-control-max-width: 320px;
     --bex-control-height: 36px;
     --bex-touch-height: 44px;
-    --bex-action-gap: 12px;
+    --bex-action-gap: var(--bex-space-3);
 }}
 
 html,
@@ -187,7 +196,7 @@ li {{
     line-height: 1;
     color: var(--bex-text-secondary);
 }}
-details[data-testid="stExpander"][open] [data-testid="stExpanderToggleIcon"] span::before {{
+[data-testid="stExpander"] details[open] [data-testid="stExpanderToggleIcon"] span::before {{
     content: "▴";
 }}
 
@@ -205,9 +214,20 @@ body,
     width: 100% !important;
     max-width: var(--bex-shell-max) !important;
     margin-inline: auto !important;
-    padding-top: 2rem !important;
+    padding-block-start: var(--bex-space-8) !important;
+    padding-block-end: var(--bex-space-12) !important;
     padding-inline: var(--bex-shell-padding) !important;
     box-sizing: border-box !important;
+}}
+
+/* Streamlit's ordinary vertical stack follows the shared 16px rhythm. */
+[data-testid="stVerticalBlock"] {{
+    gap: var(--bex-space-4) !important;
+}}
+
+/* The first control starts 32px after the app header: 16px stack gap + 16px margin. */
+[data-testid="stLayoutWrapper"]:has(> div.st-key-app_header_shell) {{
+    margin-block-end: var(--bex-space-4) !important;
 }}
 
 div.st-key-app_header_shell {{
@@ -251,7 +271,7 @@ section[data-testid="stSidebar"],
 }}
 
 .page-title {{
-    margin: 0 0 0.45rem 0;
+    margin: 0 0 var(--bex-space-2);
     font-size: 2.45rem;
     font-weight: 700;
     line-height: 1.22;
@@ -275,8 +295,8 @@ section[data-testid="stSidebar"],
     align-items: center !important;
     justify-content: flex-start !important;
     flex-wrap: nowrap !important;
-    gap: 0.5rem !important;
-    margin: 0 0 0.2rem !important;
+    gap: var(--bex-space-2) !important;
+    margin: 0 !important;
 }}
 [data-testid="stHorizontalBlock"]:has(.jalali-selected-caption) > [data-testid="stColumn"]:first-child {{
     flex: 0 1 auto !important;
@@ -298,8 +318,7 @@ div[class*="st-key-"][class*="_today_shortcut"] > div {{
 div[class*="st-key-"][class*="_today_shortcut"] button {{
     width: auto !important;
     min-width: 96px !important;
-    padding-left: 0.75rem !important;
-    padding-right: 0.75rem !important;
+    padding-inline: var(--bex-space-3) !important;
 }}
 
 div.st-key-app_header_row {{
@@ -313,7 +332,7 @@ div.st-key-app_header_row [data-testid="stHorizontalBlock"] {{
     display: grid !important;
     grid-template-columns: minmax(0, 4.2fr) minmax(0, 4.8fr) max-content;
     align-items: center !important;
-    gap: 0.75rem !important;
+    gap: var(--bex-space-3) !important;
     min-height: 64px;
     padding-inline: 0;
 }}
@@ -335,7 +354,7 @@ div.st-key-app_header_row [data-testid="stColumn"] {{
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
-    margin-inline-end: 12px;
+    margin-inline-end: var(--bex-space-3);
 }}
 
 .app-header-brand-mark img {{
@@ -350,7 +369,7 @@ div.st-key-app_header_row [data-testid="stColumn"] {{
     width: 1px;
     height: 20px;
     flex: 0 0 1px;
-    margin-inline-end: 12px;
+    margin-inline-end: var(--bex-space-3);
     background: var(--bex-border);
 }}
 
@@ -371,9 +390,10 @@ div.st-key-app_header_row [data-testid="stColumn"] {{
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--bex-space-3);
     min-width: 0;
-    padding: 0.15rem 0.1rem 0.25rem;
+    padding-block: var(--bex-space-1);
+    padding-inline: 0;
 }}
 
 .app-user-menu-name {{
@@ -389,7 +409,8 @@ div.st-key-app_header_row [data-testid="stColumn"] {{
 
 .app-user-menu-divider {{
     height: 1px;
-    margin: 0.4rem 0 0.3rem;
+    margin-block: var(--bex-space-2);
+    margin-inline: 0;
     background: var(--bex-border);
 }}
 
@@ -405,7 +426,8 @@ div.st-key-user_menu_trigger button {{
     min-width: 0 !important;
     min-height: 32px !important;
     height: 32px !important;
-    padding: 0.2rem 0.6rem !important;
+    padding-block: 0 !important;
+    padding-inline: var(--bex-space-4) !important;
     margin: 0 !important;
     box-sizing: border-box !important;
     border: 1px solid var(--bex-input) !important;
@@ -425,7 +447,7 @@ div.st-key-user_menu_trigger button:hover {{
 div.st-key-user_menu_trigger button [data-testid="stMarkdownContainer"] p {{
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--bex-space-2);
     direction: rtl;
     unicode-bidi: isolate;
     color: var(--bex-foreground) !important;
@@ -437,7 +459,8 @@ div.st-key-user_menu_trigger button code {{
     display: inline-flex;
     align-items: center;
     flex: 0 0 auto;
-    padding: 0.12rem 0.45rem;
+    padding-block: 0;
+    padding-inline: var(--bex-space-2);
     border: 1px solid var(--bex-border);
     border-radius: var(--bex-radius-md);
     background: var(--bex-muted);
@@ -485,7 +508,8 @@ div.st-key-user_menu_trigger button[aria-expanded="true"] [data-testid="stIconMa
 div.st-key-user_menu_logout button {{
     width: 100% !important;
     min-height: 44px !important;
-    padding: 0.45rem 0.65rem !important;
+    padding-block: 0 !important;
+    padding-inline: var(--bex-space-4) !important;
     border: 0 !important;
     border-radius: var(--bex-radius-md) !important;
     background: transparent !important;
@@ -516,8 +540,8 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     div.st-key-app_header_row [data-testid="stHorizontalBlock"] {{
         grid-template-columns: minmax(0, 1fr);
         min-height: auto;
-        padding-block: 0.65rem;
-        row-gap: 0.55rem !important;
+        padding-block: var(--bex-space-3);
+        row-gap: var(--bex-space-2) !important;
     }}
 
     div.st-key-app_header_row [data-testid="stColumn"]:nth-child(1) {{
@@ -558,7 +582,8 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     display: flex;
     justify-content: center;
     align-items: center;
-    margin: 0.65rem auto 1rem;
+    margin-block: var(--bex-space-3) var(--bex-space-4);
+    margin-inline: auto;
     width: 100%;
 }}
 
@@ -570,7 +595,8 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     background: var(--bex-card);
     border: 1px solid var(--bex-border);
     border-radius: var(--bex-radius-xl);
-    padding: 0.38rem 0.6rem;
+    padding-block: var(--bex-space-1);
+    padding-inline: var(--bex-space-2);
     box-shadow: var(--bex-shadow-xs);
 }}
 
@@ -595,7 +621,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 
 .login-title-block {{
     text-align: center;
-    margin-bottom: 0.9rem;
+    margin-block-end: var(--bex-space-4);
 }}
 
 [data-testid="stMainBlockContainer"]:has(.login-title-block) {{
@@ -625,7 +651,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 }}
 
 .login-title-main {{
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--bex-space-1);
     font-size: 2.4rem;
     font-weight: 700;
     line-height: 1.22;
@@ -642,11 +668,12 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     text-align: center;
     color: var(--bex-text-secondary);
     font-size: 0.78rem;
-    margin-top: 1.2rem;
+    margin-block-start: var(--bex-space-4);
 }}
 
 .panel-description {{
-    margin: 0.12rem 0 0.3rem;
+    margin-block: var(--bex-space-1) !important;
+    margin-inline: 0 !important;
     color: var(--bex-text-secondary);
     font-size: 0.95rem;
     line-height: 1.95;
@@ -655,7 +682,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 }}
 
 .panel-description-columns {{
-    margin: 0 0 0.85rem;
+    margin: 0 0 var(--bex-space-3) !important;
     color: var(--bex-muted-foreground);
     font-size: 0.88rem;
     line-height: 1.8;
@@ -671,7 +698,8 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     line-height: 2 !important;
     font-size: 0.96rem !important;
     color: var(--bex-text-primary) !important;
-    padding: 0.2rem 0.35rem 0.35rem 0.25rem;
+    padding-block: var(--bex-space-1);
+    padding-inline: var(--bex-space-1);
     width: 100% !important;
 }}
 
@@ -683,13 +711,13 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 .pipeline-progress-wrap {{
     direction: rtl !important;
     text-align: right !important;
-    margin-top: 0.3rem;
+    margin-block-start: var(--bex-space-1);
 }}
 
 .pipeline-progress-label {{
     font-size: 0.92rem;
     color: var(--bex-text-primary);
-    margin-bottom: 0.2rem;
+    margin-block-end: var(--bex-space-1);
     font-weight: 700;
 }}
 
@@ -718,7 +746,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 .pipeline-progress-note {{
     direction: rtl !important;
     text-align: right !important;
-    margin-top: 0.5rem;
+    margin-block-start: var(--bex-space-2);
     font-size: 0.9rem;
     color: var(--bex-text-secondary);
     line-height: 1.8;
@@ -728,7 +756,8 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 .visitor-progress-wrap {{
     direction: rtl !important;
     text-align: right !important;
-    margin: 0.3rem 0 0.9rem;
+    margin-block: var(--bex-space-1) var(--bex-space-4);
+    margin-inline: 0;
 }}
 
 .visitor-progress-track {{
@@ -758,7 +787,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 }}
 
 .visitor-progress-note {{
-    margin-top: 0.45rem;
+    margin-block-start: var(--bex-space-2);
     color: var(--bex-text-secondary);
     font-size: 0.92rem;
     font-weight: 600;
@@ -793,19 +822,20 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 }}
 
 .section-gap {{
-    height: 0.85rem;
+    display: none;
 }}
 
 .section-gap-lg {{
-    height: 1.35rem;
+    display: none;
 }}
 
 .neu-card {{
     background: var(--bex-card);
     border: 1px solid var(--bex-border);
     border-radius: var(--bex-radius-lg);
-    padding: 1.4rem 1.6rem;
-    margin-bottom: 1rem;
+    padding-block: var(--bex-space-4);
+    padding-inline: var(--bex-space-6);
+    margin: 0;
     box-shadow: var(--bex-shadow-xs);
 }}
 
@@ -813,8 +843,9 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     background: var(--bex-card);
     border: 1px solid var(--bex-border);
     border-radius: var(--bex-radius-lg);
-    padding: 1rem 1.2rem;
-    margin-bottom: 0.8rem;
+    padding-block: var(--bex-space-4);
+    padding-inline: var(--bex-space-6);
+    margin: 0;
     box-shadow: var(--bex-shadow-xs);
 }}
 
@@ -822,7 +853,8 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     background: var(--bex-card);
     border: 1px solid var(--bex-border);
     border-radius: var(--bex-radius-lg);
-    padding: 1.2rem 1rem;
+    padding-block: var(--bex-space-4);
+    padding-inline: var(--bex-space-6);
     text-align: center;
     box-shadow: var(--bex-shadow-xs);
     min-height: 100px;
@@ -830,6 +862,7 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    gap: var(--bex-space-1);
 }}
 
 .neu-metric .metric-value {{
@@ -844,14 +877,14 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--bex-muted-foreground);
-    margin-top: 0.35rem;
+    margin: 0;
 }}
 
 .neu-kpi-grid {{
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 0.9rem;
-    margin-bottom: 0.8rem;
+    gap: var(--bex-space-3);
+    margin: 0;
 }}
 
 div.stButton > button,
@@ -866,10 +899,9 @@ div.stDownloadButton > button {{
     box-shadow: var(--bex-shadow-xs) !important;
     font-size: 0.875rem !important;
     font-weight: 500 !important;
-}}
-
-div.stButton > button {{
-    padding: 0.55rem 1.2rem !important;
+    padding-block: 0 !important;
+    padding-inline: var(--bex-space-4) !important;
+    margin: 0 !important;
 }}
 
 div.stButton > button:hover,
@@ -889,7 +921,6 @@ div.stFormSubmitButton > button {{
     background: var(--bex-primary) !important;
     border-color: transparent !important;
     color: var(--bex-primary-foreground) !important;
-    padding: 0.55rem 2rem !important;
 }}
 
 div.stFormSubmitButton > button :is(p, [data-testid="stMarkdownContainer"] p) {{
@@ -1133,7 +1164,7 @@ div.st-key-user_menu_logout button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 [data-baseweb="select"] > div:focus-within,
-details[data-testid="stExpander"] summary:focus-visible,
+[data-testid="stExpander"] summary:focus-visible,
 [data-testid="stCheckbox"] input:focus-visible + div,
 [data-testid="stToggle"] [role="switch"]:focus-visible {{
     outline: none !important;
@@ -1162,6 +1193,8 @@ div.st-key-user_menu_logout button:focus-visible {{
     border-radius: var(--bex-radius-lg) !important;
     box-shadow: var(--bex-shadow-xs) !important;
     font-size: 0.875rem !important;
+    padding-block: var(--bex-space-3) !important;
+    padding-inline: var(--bex-space-4) !important;
 }}
 
 [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) {{
@@ -1189,6 +1222,64 @@ label p {{
     font-weight: 500 !important;
 }}
 
+[data-testid="stWidgetLabel"] {{
+    margin-block-end: var(--bex-space-1) !important;
+}}
+
+/* Stacked form controls are 12px apart while column contents stay independent. */
+[data-testid="stElementContainer"]:has(> :is(
+    [data-testid="stTextInput"],
+    [data-testid="stTextArea"],
+    [data-testid="stNumberInput"],
+    [data-testid="stDateInput"],
+    [data-testid="stSelectbox"]
+)) + [data-testid="stElementContainer"]:has(> :is(
+    [data-testid="stTextInput"],
+    [data-testid="stTextArea"],
+    [data-testid="stNumberInput"],
+    [data-testid="stDateInput"],
+    [data-testid="stSelectbox"]
+)) {{
+    margin-block-start: calc(-1 * var(--bex-space-1)) !important;
+}}
+
+/* Caption runs read as one compact block: 12px edges and 4px line spacing. */
+[data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {{
+    margin-block-start: calc(-1 * var(--bex-space-1)) !important;
+    margin-block-end: calc(-1 * var(--bex-space-1)) !important;
+}}
+
+[data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"])
++ [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {{
+    margin-block-start: calc(-1 * var(--bex-space-2)) !important;
+}}
+
+/* The runtime/map guidance sequence is one caption block, not three islands. */
+[data-testid="stElementContainer"]:has(.section-header)
++ [data-testid="stElementContainer"]:has([data-testid="stAlert"])
++ [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {{
+    margin-block-start: calc(-1 * var(--bex-space-3)) !important;
+    margin-block-end: calc(-1 * var(--bex-space-3)) !important;
+}}
+
+[data-testid="stElementContainer"]:has(.section-header)
++ [data-testid="stElementContainer"]:has([data-testid="stAlert"])
++ [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"])
++ [data-testid="stElementContainer"]:has(.panel-description) {{
+    margin-block-end: var(--bex-space-2) !important;
+}}
+
+[data-testid="stElementContainer"]:has(.section-header)
++ [data-testid="stElementContainer"]:has([data-testid="stAlert"])
++ [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"])
++ [data-testid="stElementContainer"]:has(.panel-description) .panel-description {{
+    margin-block: 0 var(--bex-space-1) !important;
+}}
+
+[data-testid="stCaptionContainer"] {{
+    margin: 0 !important;
+}}
+
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea,
 input[type="text"],
@@ -1203,7 +1294,7 @@ textarea {{
 [data-testid="stCheckbox"] {{
     direction: rtl !important;
     text-align: right !important;
-    margin-top: 0.2rem !important;
+    margin-block-start: var(--bex-space-1) !important;
 }}
 [data-testid="stCheckbox"] > label {{
     direction: rtl !important;
@@ -1211,11 +1302,11 @@ textarea {{
     flex-direction: row !important;
     align-items: center !important;
     justify-content: flex-start !important;
-    column-gap: 0.45rem !important;
+    column-gap: var(--bex-space-2) !important;
     row-gap: 0 !important;
     min-height: 36px !important;
     line-height: 1.8 !important;
-    padding-right: 0.25rem !important;
+    padding-inline-start: var(--bex-space-1) !important;
     cursor: pointer !important;
 }}
 [data-testid="stCheckbox"] input[type="checkbox"] {{
@@ -1239,7 +1330,7 @@ textarea {{
     background: var(--bex-primary) !important;
 }}
 [data-testid="stCheckbox"] > label > div:last-child {{
-    margin-right: 0.18rem !important;
+    margin-inline-start: var(--bex-space-1) !important;
 }}
 [data-testid="stCheckbox"] span {{
     margin: 0 !important;
@@ -1284,20 +1375,27 @@ textarea {{
     min-height: 44px !important;
 }}
 
-details[data-testid="stExpander"] {{
+[data-testid="stExpander"] {{
     background: var(--bex-card) !important;
     border: 1px solid var(--bex-border) !important;
     border-radius: var(--bex-radius-lg) !important;
     box-shadow: var(--bex-shadow-xs) !important;
-    margin-bottom: 0.8rem;
+    margin: 0;
 }}
 
-details[data-testid="stExpander"] summary {{
+[data-testid="stExpander"] summary {{
     direction: rtl !important;
     text-align: right !important;
     color: var(--bex-foreground) !important;
     font-size: 1rem !important;
     font-weight: 600 !important;
+    padding-block: var(--bex-space-4) !important;
+    padding-inline: var(--bex-space-6) !important;
+}}
+
+[data-testid="stExpanderDetails"] {{
+    padding-block: var(--bex-space-4) !important;
+    padding-inline: var(--bex-space-6) !important;
 }}
 
 /* FIX: [A11Y-02] Expander icon is intentionally visible for accessibility. */
@@ -1305,10 +1403,10 @@ details[data-testid="stExpander"] summary {{
     display: inline-flex !important;
 }}
 
-details[data-testid="stExpander"] [data-testid="stCaptionContainer"],
-details[data-testid="stExpander"] [data-testid="stCaptionContainer"] *,
-details[data-testid="stExpander"] .stCaptionContainer,
-details[data-testid="stExpander"] .stCaptionContainer * {{
+[data-testid="stExpander"] [data-testid="stCaptionContainer"],
+[data-testid="stExpander"] [data-testid="stCaptionContainer"] *,
+[data-testid="stExpander"] .stCaptionContainer,
+[data-testid="stExpander"] .stCaptionContainer * {{
     direction: rtl !important;
     text-align: right !important;
     line-height: 1.9 !important;
@@ -1317,7 +1415,8 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
 .telesales-detail-line {{
     direction: rtl !important;
     text-align: right !important;
-    margin: 0.35rem 0 !important;
+    margin-block: var(--bex-space-1) !important;
+    margin-inline: 0 !important;
     color: var(--bex-text-primary);
 }}
 
@@ -1349,7 +1448,8 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
 
 .badge {{
     display: inline-block;
-    padding: 0.125rem 0.5rem;
+    padding-block: 0;
+    padding-inline: var(--bex-space-2);
     border: 1px solid currentColor;
     border-radius: var(--bex-radius-md);
     font-size: 0.75rem;
@@ -1371,16 +1471,22 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
     font-size: 1.15rem;
     font-weight: 700;
     color: var(--bex-text-primary);
-    margin-bottom: 0.6rem;
-    padding-bottom: 0.3rem;
+    margin: 0 0 var(--bex-space-3);
+    padding-block-end: var(--bex-space-1);
     border-bottom: 1px solid var(--bex-border);
     text-align: right !important;
     direction: rtl !important;
 }}
 
+/* A section begins 48px after the previous block: 16px stack gap + 32px margin. */
+[data-testid="stElementContainer"]:has(.section-header) {{
+    margin-block-start: var(--bex-space-8) !important;
+}}
+
 .role-badge {{
     display: inline-block;
-    padding: 0.125rem 0.5rem;
+    padding-block: 0;
+    padding-inline: var(--bex-space-2);
     border: 1px solid currentColor;
     border-radius: var(--bex-radius-md);
     font-size: 0.75rem;
@@ -1399,11 +1505,12 @@ details[data-testid="stExpander"] .stCaptionContainer * {{
     border: 1px solid var(--bex-border);
     border-inline-start: 4px solid var(--bex-role-manager-fg);
     border-radius: var(--bex-radius-lg);
-    padding: 0.6rem 1rem;
+    padding-block: var(--bex-space-3);
+    padding-inline: var(--bex-space-4);
     font-weight: 600;
     font-size: 0.85rem;
     text-align: center;
-    margin-bottom: 1rem;
+    margin: 0;
     box-shadow: var(--bex-shadow-xs);
 }}
 

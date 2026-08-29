@@ -150,7 +150,7 @@ def render_supervisor_dashboard(current_user: dict) -> None:
             )
 
     neu_section_header("خروجی‌ها")
-    d1, d2 = st.columns(2)
+    d1, d2 = st.columns([1, 1], gap="small")
     with d1:
         if selected_code != _ALL_VISITORS_OPTION and selected_code in visitor_options:
             with get_db() as db:
@@ -164,7 +164,6 @@ def render_supervisor_dashboard(current_user: dict) -> None:
                 data=route_buf.getvalue(),
                 file_name=f"route_{work_date_iso}_{selected_code}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
             )
 
     with d2:
@@ -175,7 +174,6 @@ def render_supervisor_dashboard(current_user: dict) -> None:
                 data=all_buf.getvalue(),
                 file_name=f"all_routes_{work_date_iso}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
             )
 
     neu_section_header("نتایج ویزیت")

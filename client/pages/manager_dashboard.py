@@ -772,7 +772,6 @@ def render_manager_dashboard(current_user: dict) -> None:
         if st.button(
             "پاک‌سازی کامل همین تاریخ",
             key=f"flush_{work_date_iso}",
-            use_container_width=True,
             disabled=(not confirm_flush) or (not has_any_daily_data),
         ):
             try:
@@ -795,13 +794,12 @@ def render_manager_dashboard(current_user: dict) -> None:
                 st.error(f"خطا در پاک‌سازی: {exc}")
 
     neu_section_header("عملیات مدیریتی")
-    op1, op2 = st.columns(2)
+    op1, op2 = st.columns([1, 7], gap="small")
 
     with op1:
         if st.button(
             "📤 انتشار مسیرها",
             key=f"publish_{work_date_iso}",
-            use_container_width=True,
             disabled=is_hard_locked or (draft_count <= 0),
             type="primary",
         ):
@@ -828,7 +826,6 @@ def render_manager_dashboard(current_user: dict) -> None:
         if st.button(
             "🔒 نهایی‌سازی موارد ثبت‌نشده",
             key=f"finalize_{work_date_iso}",
-            use_container_width=True,
             disabled=is_hard_locked,
         ):
             with get_db() as db:
@@ -966,7 +963,7 @@ def render_manager_dashboard(current_user: dict) -> None:
             )
 
     neu_section_header("خروجی‌ها")
-    ex1, ex2 = st.columns(2)
+    ex1, ex2 = st.columns([1, 1], gap="small")
     with ex1:
         if selected_code:
             with get_db() as db:
@@ -980,7 +977,6 @@ def render_manager_dashboard(current_user: dict) -> None:
                 data=route_buf.getvalue(),
                 file_name=f"route_{work_date_iso}_{selected_code}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
             )
 
     with ex2:
@@ -994,5 +990,4 @@ def render_manager_dashboard(current_user: dict) -> None:
             data=summary_buf.getvalue(),
             file_name=f"summary_{work_date_iso}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
         )

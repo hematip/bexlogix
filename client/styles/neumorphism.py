@@ -127,6 +127,16 @@ def _build_global_css() -> str:
     --bex-login-shell-max: 36rem; /* Bextudio maxWidth/xl: 576px. */
     --bex-login-card-padding: 1.5rem; /* Bextudio spacing/6: 24px. */
     --bex-login-logo-max: 15rem;
+    --bex-shell-max: 1280px;
+    --bex-shell-padding: 24px;
+    --bex-shell-offset: -24px;
+    --bex-shell-padding-mobile: 16px;
+    --bex-shell-offset-mobile: -16px;
+    --bex-control-min-width: 140px;
+    --bex-control-max-width: 320px;
+    --bex-control-height: 36px;
+    --bex-touch-height: 44px;
+    --bex-action-gap: 12px;
 }}
 
 html,
@@ -192,9 +202,32 @@ body,
 }}
 
 [data-testid="stMainBlockContainer"] {{
+    width: 100% !important;
+    max-width: var(--bex-shell-max) !important;
+    margin-inline: auto !important;
     padding-top: 2rem !important;
-    padding-right: 1.2rem !important;
-    padding-left: 1.2rem !important;
+    padding-inline: var(--bex-shell-padding) !important;
+    box-sizing: border-box !important;
+}}
+
+div.st-key-app_header_shell {{
+    width: calc(100% + var(--bex-shell-padding) + var(--bex-shell-padding)) !important;
+    max-width: var(--bex-shell-max) !important;
+    margin-inline: var(--bex-shell-offset) !important;
+    padding-inline: var(--bex-shell-padding) !important;
+    box-sizing: border-box !important;
+}}
+
+@media (max-width: 767px) {{
+    [data-testid="stMainBlockContainer"] {{
+        padding-inline: var(--bex-shell-padding-mobile) !important;
+    }}
+
+    div.st-key-app_header_shell {{
+        width: calc(100% + var(--bex-shell-padding-mobile) + var(--bex-shell-padding-mobile)) !important;
+        margin-inline: var(--bex-shell-offset-mobile) !important;
+        padding-inline: var(--bex-shell-padding-mobile) !important;
+    }}
 }}
 
 [data-testid="stHeader"] {{
@@ -824,8 +857,8 @@ div.st-key-user_menu_logout button [data-testid="stMarkdownContainer"] p {{
 div.stButton > button,
 div.stFormSubmitButton > button,
 div.stDownloadButton > button {{
-    min-height: 36px !important;
-    height: 36px !important;
+    min-height: var(--bex-control-height) !important;
+    height: var(--bex-control-height) !important;
     border: 1px solid var(--bex-input) !important;
     border-radius: var(--bex-radius-md) !important;
     background: var(--bex-card) !important;
@@ -941,6 +974,11 @@ div.stButton.st-key-user_menu_logout > button :is(p, [data-testid="stMarkdownCon
     color: var(--bex-destructive) !important;
 }}
 
+[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"])
+> [data-testid="stColumn"]:not(:has([data-testid="stDownloadButton"])) {{
+    display: none !important;
+}}
+
 @media (min-width: 768px) {{
     div.stButton,
     div.stFormSubmitButton,
@@ -954,10 +992,49 @@ div.stButton.st-key-user_menu_logout > button :is(p, [data-testid="stMarkdownCon
     [data-testid^="stBaseButton"],
     [data-testid="stDownloadButton"] button {{
         width: auto !important;
-        min-width: 140px !important;
-        max-width: 320px !important;
+        min-width: var(--bex-control-min-width) !important;
+        max-width: var(--bex-control-max-width) !important;
         flex: 0 1 auto !important;
         white-space: nowrap !important;
+    }}
+
+    div[class*="st-key-"][class*="_today_shortcut"] button {{
+        min-width: var(--bex-control-min-width) !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has(div[class*="st-key-publish_"]) {{
+        align-items: flex-start !important;
+        gap: var(--bex-action-gap) !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has(div[class*="st-key-publish_"])
+    > [data-testid="stColumn"]:has(div[class*="st-key-publish_"]) {{
+        flex: 0 0 var(--bex-control-min-width) !important;
+        width: var(--bex-control-min-width) !important;
+        min-width: var(--bex-control-min-width) !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has(div[class*="st-key-publish_"])
+    > [data-testid="stColumn"]:has(div[class*="st-key-finalize_"]) {{
+        flex: 1 1 auto !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]),
+    [data-testid="stHorizontalBlock"]:has(div.st-key-telesales_prev_page) {{
+        justify-content: flex-start !important;
+        align-items: flex-start !important;
+        gap: var(--bex-action-gap) !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"])
+    > [data-testid="stColumn"],
+    [data-testid="stHorizontalBlock"]:has(div.st-key-telesales_prev_page)
+    > [data-testid="stColumn"] {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 0 !important;
     }}
 
     div[class*="st-key-build_pipeline_"] div.stButton,
@@ -987,9 +1064,45 @@ div.stButton.st-key-user_menu_logout > button :is(p, [data-testid="stMarkdownCon
         width: 100% !important;
         min-width: 0 !important;
         max-width: none !important;
-        min-height: 44px !important;
-        height: 44px !important;
+        min-height: var(--bex-touch-height) !important;
+        height: var(--bex-touch-height) !important;
         flex: 1 1 100% !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has(div[class*="st-key-publish_"]),
+    [data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]),
+    [data-testid="stHorizontalBlock"]:has(div.st-key-telesales_prev_page) {{
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: var(--bex-action-gap) !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has(div[class*="st-key-publish_"])
+    > [data-testid="stColumn"],
+    [data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"])
+    > [data-testid="stColumn"],
+    [data-testid="stHorizontalBlock"]:has(div.st-key-telesales_prev_page)
+    > [data-testid="stColumn"] {{
+        flex: 1 1 100% !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }}
+
+    [data-testid="stHorizontalBlock"]:has(div[class*="st-key-publish_"])
+    [data-testid="stElementContainer"],
+    [data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"])
+    [data-testid="stElementContainer"],
+    [data-testid="stHorizontalBlock"]:has(div.st-key-telesales_prev_page)
+    [data-testid="stElementContainer"],
+    [data-testid="stHorizontalBlock"]:has(div[class*="st-key-publish_"])
+    [data-testid="stButton"],
+    [data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"])
+    [data-testid="stDownloadButton"],
+    [data-testid="stHorizontalBlock"]:has(div.st-key-telesales_prev_page)
+    [data-testid="stButton"] {{
+        flex: 1 1 100% !important;
+        width: 100% !important;
+        max-width: none !important;
     }}
 }}
 

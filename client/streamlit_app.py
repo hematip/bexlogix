@@ -89,7 +89,7 @@ def _resolve_tab_icon():
 
 # Contract: _render_topbar executes one deterministic step in the workflow.
 def _render_topbar(current_user: dict, page_title: str) -> bool:
-    with st.container(key="app_header"):
+    with st.container(key="app_header_shell"):
         with st.container(key="app_header_row"):
             return render_dashboard_header(current_user, page_title)
 

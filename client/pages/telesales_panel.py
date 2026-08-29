@@ -91,7 +91,7 @@ def render_telesales_panel(current_user: dict) -> None:
 
     nav_left, nav_center, nav_right = st.columns([1, 2, 1], gap="small")
     with nav_left:
-        if st.button("قبلی", key="telesales_prev_page", disabled=page <= 1, use_container_width=True):
+        if st.button("قبلی", key="telesales_prev_page", disabled=page <= 1):
             st.session_state["telesales_page"] = max(page - 1, 1)
             st.rerun()
     with nav_center:
@@ -104,7 +104,6 @@ def render_telesales_panel(current_user: dict) -> None:
             "بعدی",
             key="telesales_next_page",
             disabled=page >= total_pages,
-            use_container_width=True,
         ):
             st.session_state["telesales_page"] = min(page + 1, total_pages)
             st.rerun()
@@ -191,7 +190,6 @@ def render_telesales_panel(current_user: dict) -> None:
                 )
                 submitted = st.form_submit_button(
                     "ذخیره نتیجه",
-                    use_container_width=True,
                     type="primary",
                 )
 

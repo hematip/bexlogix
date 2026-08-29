@@ -256,7 +256,6 @@ def render_visitor_panel(current_user: dict) -> None:
                 )
                 submitted = st.form_submit_button(
                     "ثبت نتیجه",
-                    use_container_width=True,
                     type="primary",
                 )
 
